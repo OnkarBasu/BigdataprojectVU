@@ -4,7 +4,7 @@ from pathlib import Path
 from src.streaming import AISRowParser
 
 
-FILE_PATH = Path("data/sample/head_100_000_rows.csv")
+FILE_PATH = Path("data/sample/2025-08-31_tail_10_000_rows.csv")
 
 
 def main():

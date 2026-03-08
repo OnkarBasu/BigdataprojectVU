@@ -29,6 +29,7 @@ NULL_VALUES = frozenset({
     "null",
 })
 
+# Common placeholder or invalid MMSI values found in AIS datasets
 INVALID_MMSI_VALUES = frozenset({
     0,
     111111111,
@@ -98,6 +99,16 @@ def _parse_float(value: str | None) -> float | None:
 
 
 class AISRowParser:
+    """
+    Parse raw CSV rows into AISRecord objects.
+
+    The parser validates required fields, converts values to the appropriate
+    types, and filters out invalid or unsupported AIS messages such as
+    base stations or malformed records.
+
+    The CSV schema is assumed to match the AIS dataset format used in the
+    project (e.g. columns like "# Timestamp", "MMSI", "Latitude", etc.).
+    """
     def __init__(self, fieldnames: Iterable[str] | None) -> None:
         headers = set(fieldnames or ())
 
@@ -158,6 +169,21 @@ class AISRowParser:
         return 0.0 <= draught <= 50.0
 
     def parse_row(self, row: Mapping[str, str]) -> AISRecord | None:
+        """
+        Parse a single CSV row into an AISRecord.
+
+        The method converts raw string values to typed fields, validates
+        coordinates, MMSI, and other constraints, and filters out rows that
+        should not be processed (e.g. base station messages or invalid data).
+
+        Args:
+            row: A dictionary produced by csv.DictReader representing a single
+                AIS CSV row.
+
+        Returns:
+            AISRecord: Parsed AIS record if the row is valid.
+            None: If the row should be skipped due to invalid or unsupported data.
+        """
         mobile_type = _clean_text(row.get(self.mobile_type_key))
         if mobile_type == "Base Station":
             return None

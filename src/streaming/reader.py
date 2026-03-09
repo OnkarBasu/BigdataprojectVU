@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import Generator, Iterable
 
 from src.models import AISRecord
-from src.streaming import AISRowParser, Chunk
+from .parser import AISRowParser
+from .types import Chunk
 
 
 def stream_records(

@@ -21,6 +21,15 @@ from src.performance import (
 from src.streaming import stream_csv_files_in_chunks
 
 
+def worker_init() -> None:
+    """
+    Initialize a worker process and print its PID once at startup.
+    """
+    import os
+
+    print(f"Worker started: PID={os.getpid()}")
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     """
     Build the CLI argument parser for the detection script.
@@ -215,7 +224,7 @@ def main() -> None:
         encoding=encoding,
     )
 
-    with Pool(processes=workers) as pool:
+    with Pool(processes=workers, initializer=worker_init) as pool:
         for chunk_result in pool.imap(process_chunk, tasks, chunksize=1):
             merge_chunk_result_into_state(
                 merge_state=merge_state,

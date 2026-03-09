@@ -3,11 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from src.anomaly_detection import detect_all_pair_anomalies
-from src.models import (
-    AISRecord,
-    ChunkProcessingResult,
-    VesselChunkSummary,
-)
+from src.models import AISRecord, ChunkProcessingResult, VesselChunkSummary
 from src.models.processing import VesselGlobalSummary
 
 
@@ -23,6 +19,64 @@ class BoundaryState:
 
     last_record: AISRecord
     last_chunk_id: int
+
+
+@dataclass(slots=True)
+class MergeState:
+    """
+    Incremental merge state maintained by the main process.
+
+    Attributes:
+        global_summaries: Fully merged per-vessel summaries.
+        boundary_states: Latest known boundary record for each vessel.
+    """
+
+    global_summaries: dict[int, VesselGlobalSummary] = field(default_factory=dict)
+    boundary_states: dict[int, BoundaryState] = field(default_factory=dict)
+
+
+def create_merge_state() -> MergeState:
+    """
+    Create an empty merge state for incremental chunk merging.
+
+    Returns:
+        Initialized merge state.
+    """
+    return MergeState()
+
+
+def merge_chunk_result_into_state(
+    merge_state: MergeState,
+    chunk_result: ChunkProcessingResult,
+) -> None:
+    """
+    Merge a single chunk result into the incremental global state.
+
+    Args:
+        merge_state: Incremental merge state maintained by the main process.
+        chunk_result: Per-chunk worker result to merge.
+    """
+    for mmsi, chunk_summary in chunk_result.vessel_summaries.items():
+        global_summary = merge_state.global_summaries.get(mmsi)
+        if global_summary is None:
+            global_summary = VesselGlobalSummary(
+                mmsi=mmsi,
+                record_count=0,
+            )
+            merge_state.global_summaries[mmsi] = global_summary
+
+        _merge_local_chunk_summary(global_summary, chunk_summary)
+        _merge_boundary_anomalies(
+            global_summary=global_summary,
+            boundary_state=merge_state.boundary_states.get(mmsi),
+            current_chunk_id=chunk_result.chunk_id,
+            current_summary=chunk_summary,
+        )
+
+        merge_state.boundary_states[mmsi] = BoundaryState(
+            last_record=chunk_summary.last_record,
+            last_chunk_id=chunk_result.chunk_id,
+        )
 
 
 def merge_chunk_results(
@@ -43,33 +97,12 @@ def merge_chunk_results(
     Returns:
         Dictionary mapping MMSI to fully merged vessel summaries.
     """
-    global_summaries: dict[int, VesselGlobalSummary] = {}
-    boundary_states: dict[int, BoundaryState] = {}
+    merge_state = create_merge_state()
 
     for chunk_result in sorted(chunk_results, key=lambda result: result.chunk_id):
-        for mmsi, chunk_summary in chunk_result.vessel_summaries.items():
-            global_summary = global_summaries.get(mmsi)
-            if global_summary is None:
-                global_summary = VesselGlobalSummary(
-                    mmsi=mmsi,
-                    record_count=0,
-                )
-                global_summaries[mmsi] = global_summary
+        merge_chunk_result_into_state(merge_state, chunk_result)
 
-            _merge_local_chunk_summary(global_summary, chunk_summary)
-            _merge_boundary_anomalies(
-                global_summary=global_summary,
-                boundary_state=boundary_states.get(mmsi),
-                current_chunk_id=chunk_result.chunk_id,
-                current_summary=chunk_summary,
-            )
-
-            boundary_states[mmsi] = BoundaryState(
-                last_record=chunk_summary.last_record,
-                last_chunk_id=chunk_result.chunk_id,
-            )
-
-    return global_summaries
+    return merge_state.global_summaries
 
 
 def _merge_local_chunk_summary(

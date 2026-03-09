@@ -1,0 +1,327 @@
+port_name,country,state,latitude,longitude,radius_km,source_url
+Antwerp,Belgium,Flanders,51.315,4.265,30,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Bruges,Belgium,West Flanders,51.23,3.22,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Ghent,Belgium,East Flanders,51.16,3.77,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Ostend,Belgium,West Flanders,51.23,2.93,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Zeebrugge,Belgium,West Flanders,51.345,3.205,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Aabenraa,Denmark,South Denmark,55.035,9.43,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Aalborg,Denmark,North Jutland,57.055,10.005,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Aarhus,Denmark,Aarhus,56.16,10.24,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Asnæs,Denmark,Region Zealand,55.67,11.09,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Assens,Denmark,Region of Southern Denmark,55.27,9.89,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Avernakke,Denmark,Region of Southern Denmark,55.31,10.79,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Brunsbüttel,Denmark,Schleswig-Holstein,53.88,9.13,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Copenhagen,Denmark,Denmark,55.7,12.625,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Esbjerg,Denmark,Region of Southern Denmark,55.47,8.42,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Faaborg,Denmark,Region of Southern Denmark,55.09,10.24,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Fredericia,Denmark,South Denmark,55.55,9.75,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Frederikshavn,Denmark,North Jutland,57.47,10.69,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Gedser,Denmark,Zealand,54.57,11.93,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Grenaa,Denmark,Central Denmark,56.42,10.93,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Guldborg,Denmark,Region Zealand,54.87,11.75,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Gulfhavn,Denmark,Zealand,55.2,11.24,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Hanstholm,Denmark,North Denmark Region,57.12,8.59,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Helsingor,Denmark,Capital Region,56.03,12.62,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Helsingør,Denmark,Zealand,56.05,12.64,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Hirtshals,Denmark,North Denmark Region,57.6,9.97,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Horsens,Denmark,Denmark,55.86,9.86,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kalundborg,Denmark,Zealand,55.71,11.09,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kiel,Denmark,Schleswig-Holstein,54.36,10.15,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kolding,Denmark,South Denmark,55.49,9.5,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Korsor,Denmark,Zealand,55.35,11.04,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Køge,Denmark,Region Zealand,55.46,12.2,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Laeso,Denmark,North Denmark Region,57.27,10.705,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Lindholm,Denmark,North Jutland,55.31,10.79,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Little Belt,Denmark,Region of Southern Denmark,55.52,9.71,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Lyngs Odde,Denmark,Midtjylland,55.55,9.75,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Middelfart,Denmark,Region of Southern Denmark,55.51,9.74,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Munkebo,Denmark,Region of Southern Denmark,55.41,10.38,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Nakskov,Denmark,Zealand,54.83,11.12,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Nyborg,Denmark,Region of Southern Denmark,55.31,10.79,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Nykobing,Denmark,Zealand,54.77,11.86,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Odense,Denmark,Region of Southern Denmark,55.41,10.38,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Offshore Kattegat No.2,Denmark,Denmark,57.12,10.78,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Randers,Denmark,Central Denmark Region,56.46,10.05,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Rødby,Denmark,Region Zealand,54.65,11.35,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Rønne,Denmark,Capital Region,55.09,14.69,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Skaerbaek,Denmark,South Denmark,55.51,9.62,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Skagen,Denmark,North Denmark Region,57.9,10.62,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Stignæs,Denmark,Zealand,55.2,11.24,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Studstrup,Denmark,Aarhus,56.25,10.35,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Sønderborg,Denmark,South Denmark,54.9,9.78,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Thyboron,Denmark,Central Jutland,56.7,8.22,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Vejle,Denmark,Southern Denmark,55.71,9.55,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kunda,Estonia,Lääne-Viru County,59.57,26.52,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Meeruse,Estonia,Harju County,59.5,24.97,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Miiduranna,Estonia,Harju County,59.5,24.81,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Muuga,Estonia,Harju County,59.5,24.97,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Novotallinsky,Estonia,Harju County,59.5,24.97,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Paldiski,Estonia,Harju County,59.415,24.525,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Paljassaare,Estonia,Harju County,59.5,24.97,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Peetri,Estonia,Harju County,59.5,24.97,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Pirita,Estonia,Harju County,59.47,24.82,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Pärnu,Estonia,Pärnu maakond,58.39,24.48,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Sillamäe,Estonia,Ida-Viru County,59.42,27.74,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Tallinn,Estonia,Harju County,59.46,24.77,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Vanasadam,Estonia,Harju County,59.46,24.73,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Aland,Finland,Aland Islands,60.1,19.92,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Haakoninlahti,Finland,Finland,60.15,24.91,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Hamina,Finland,Kymenlaakso,60.54,27.18,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Hanko,Finland,Uusimaa,59.845,23.07,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Haponniemi,Finland,Finland,60.79,21.38,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Helsinki,Finland,Uusimaa,60.18,25.055,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Hepokari,Finland,Finland,60.79,21.38,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Inkoo,Finland,Uusimaa,60.01,23.96,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Jakobstad,Finland,Ostrobothnia,63.74,22.44,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kaskinen,Finland,Ostrobothnia,62.38,21.22,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kemi,Finland,Lapland,65.66,24.51,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kokkola,Finland,Central Ostrobothnia,63.86,23.04,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kotka,Finland,Kymenlaakso,60.45,26.93,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kristinestad,Finland,Ostrobothnia,62.26,21.32,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Laajasalo,Finland,Uusimaa,60.15,24.91,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Mantyluoto,Finland,Pori,61.49,21.8,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Mariehamn,Finland,Åland Islands,60.1,19.92,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Naantali,Finland,Finland,60.45,22.07,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Nuottasaari,Finland,North Ostrobothnia,65.03,25.43,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Orivesi,Finland,Pirkanmaa,65.03,25.43,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Oulu,Finland,Northern Ostrobothnia,65.015,25.415,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Pori,Finland,Satakunta,61.49,21.8,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Porvoo,Finland,Uusimaa,60.37,25.69,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Raahe,Finland,Oulu,64.7,24.49,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Rauma,Finland,Satakunta,61.13,21.44,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Tahkoluoto,Finland,Satakunta,61.65,21.39,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Turku,Finland,Southwest Finland,60.44,22.22,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Uusikaupunki,Finland,Finland,60.79,21.38,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Vaasa,Finland,Ostrobothnia,63.1,21.59,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Vihreasaari,Finland,Finland,65.03,25.43,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Ykspihlaja,Finland,Central Ostrobothnia,63.86,23.04,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Yxpila,Finland,Central Ostrobothnia,63.86,23.04,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Altona,Germany,Hamburg,53.54,9.93,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Brake,Germany,Lower Saxony,53.33,8.49,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Bremen,Germany,Bremen,53.34,8.625,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Bremerhaven,Germany,Bremen,53.56,8.55,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Brunsbüttel,Germany,Schleswig-Holstein,53.765,9.325,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Cuxhaven,Germany,Lower Saxony,53.87,8.72,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Eckernförde,Germany,Schleswig-Holstein,54.47,9.86,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Emden,Germany,Lower Saxony,53.33,7.18,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Flensburg,Germany,Schleswig-Holstein,54.8,9.44,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Hamburg,Germany,Hamburg,53.54,9.88,30,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kiel,Germany,Schleswig-Holstein,54.34,10.15,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Lubeck,Germany,Schleswig-Holstein,53.88,10.69,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Lübeck,Germany,Schleswig-Holstein,53.95,10.86,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Nordenham,Germany,Lower Saxony,53.49,8.5,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Rostock,Germany,Mecklenburg-Vorpommern,54.16,12.1,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Stade,Germany,Lower Saxony,53.64,9.52,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Stralsund,Germany,Mecklenburg-Vorpommern,54.32,13.1,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Wedel,Germany,Schleswig-Holstein,53.56,9.72,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Wilhelmshaven,Germany,Lower Saxony,53.56,8.16,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Wismar,Germany,Mecklenburg-Vorpommern,53.9,11.45,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Liepaja,Latvia,Liepāja Municipality,56.53,20.99,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Riga,Latvia,Latvia,56.98,24.09,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Ventspils,Latvia,Ventspils Municipality,57.4,21.53,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Būtingė,Lithuania,Klaipėda County,56.04,20.96,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Klaipeda,Lithuania,Klaipėdos Apskritis,55.7,21.12,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Alphen aan den Rijn,Netherlands,South Holland,51.9,4.43,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Amsterdam,Netherlands,Noord-Holland,52.4,4.88,30,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Axel,Netherlands,Zeeland,51.34,3.81,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Borsele,Netherlands,Zeeland,51.41,3.73,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Botlek,Netherlands,South Holland,51.88,4.29,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Braakman Harbour,Netherlands,Zeeland,51.34,3.81,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Delfzijl,Netherlands,Groningen,53.33,6.94,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Den Helder,Netherlands,North Holland,52.96,4.78,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Dordrecht,Netherlands,South Holland,51.79,4.64,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Eemshaven,Netherlands,Groningen,53.45,6.83,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Europoort,Netherlands,South Holland,51.96,4.14,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Everingen,Netherlands,Provincie Utrecht,51.46,3.69,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Harlingen,Netherlands,Friesland,53.17,5.41,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Hoek van Holland,Netherlands,South Holland,51.97,4.13,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Hook of Holland,Netherlands,South Holland,51.97,4.13,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+IJmuiden,Netherlands,North Holland,52.47,4.59,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Ijmuiden,Netherlands,North Holland,52.47,4.57,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Maas Junction North Bound,Netherlands,Limburg,52.01,3.49,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Maas Junction South Bound,Netherlands,Netherlands,52.01,3.4,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Maassluis,Netherlands,South Holland,51.92,4.24,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Maasvlakte,Netherlands,South Holland,51.97,4.07,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Moerdijk,Netherlands,North Brabant,51.69,4.57,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Rotterdam,Netherlands,South Holland,51.955,4.085,30,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Rozenburg,Netherlands,South Holland,51.92,4.24,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Sas van Gent,Netherlands,Zeeland,51.34,3.81,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Scheveningen,Netherlands,South Holland,52.1,4.26,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Sluiskill,Netherlands,Zeeland,51.28,3.84,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Steenbank,Netherlands,Zeeland,51.85,3.36,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Terneuzen,Netherlands,Zeeland,51.34,3.81,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Terschelling,Netherlands,Friesland,53.39,4.69,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Terschellinger Bank,Netherlands,Friesland,53.48,4.6,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+The Hague,Netherlands,South Holland,52.1,4.26,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Velsen,Netherlands,North Holland,52.46,4.64,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Vlissingen,Netherlands,Zeeland,51.44,3.6,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Agotnes,Norway,Vestland,60.42,5.01,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Alesund,Norway,Møre og Romsdal,62.47,6.15,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Arendal,Norway,Agder,58.46,8.77,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Austevoll,Norway,Vestland,60.1,5.25,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Bergen,Norway,Vestland,60.39,5.3,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Borg,Norway,Nordland,59.21,10.96,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Bremanger,Norway,Vestland,61.77,4.88,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Brevik,Norway,Vestfold og Telemark,59.05,9.69,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Drammen,Norway,Viken,59.74,10.24,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Draugen Field,Norway,Norway,64.35,7.87,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Egersund,Norway,Rogaland,58.45,5.99,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Elnesvågen,Norway,Møre og Romsdal,62.85,7.15,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Fagerstrand,Norway,Viken,59.73,10.58,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Florø,Norway,Vestland,61.6,5.03,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Fredrikstad,Norway,Østfold,59.21,10.96,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Gismerøy,Norway,Agder,58.02,7.46,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Gullfaks,Norway,Vestland,61.16,2.16,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Halden,Norway,Viken,59.12,11.38,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Haugesund,Norway,Rogaland,59.42,5.25,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Holmen,Norway,Viken,59.74,10.24,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Holmestrand,Norway,Vestfold og Telemark,59.49,10.32,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Homsvik,Norway,Møre og Romsdal,58.02,7.46,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Husøy,Norway,Troms og Finnmark,59.24,10.47,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Ikornnes,Norway,Møre og Romsdal,62.39,6.56,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kaarstoe,Norway,Rogaland,59.27,5.49,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Karsto,Norway,Rogaland,59.27,5.49,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kleven,Norway,Møre og Romsdal,58.02,7.46,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Knarrevik,Norway,Vestland,60.38,5.16,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kristiansand,Norway,Agder,58.14,7.99,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kristiansund,Norway,Møre og Romsdal,63.11,7.74,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kårstø,Norway,Rogaland,59.27,5.49,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Langesund,Norway,Telemark,59.13,9.61,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Larkollen,Norway,Østfold,59.34,10.66,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Larvik,Norway,Vestfold og Telemark,59.05,10.02,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Lindesnes,Norway,Agder,58.02,7.46,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Mellos Harbour,Norway,Trøndelag,59.21,10.96,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Mjanesholmen,Norway,Vestland,58.92,5.6,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Molde,Norway,Møre og Romsdal,58.93,5.6,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Mongstad,Norway,Vestland,60.82,5.04,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Moss,Norway,Viken,59.43,10.65,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Måløy,Norway,Vestland,61.94,5.13,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Namsos,Norway,Trøndelag,64.7,11.475,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Nyhamna,Norway,Møre og Romsdal,62.85,6.95,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Odda,Norway,Vestland,60.08,6.55,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Oslo,Norway,Oslo,59.89,10.755,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Porsgrunn,Norway,Vestfold og Telemark,59.12,9.62,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Rafnes,Norway,Vestfold og Telemark,59.13,9.61,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Risavika,Norway,Rogaland,58.93,5.6,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+SC Norway,Norway,Norway,58.46,8.77,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Sandefjord,Norway,Vestfold og Telemark,59.12,10.23,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Selje,Norway,Vestland,62.04,5.34,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Skien,Norway,Vestfold og Telemark,59.13,9.61,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Slagen,Norway,Vestfold og Telemark,59.33,10.52,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Slemmestad,Norway,Viken,59.78,10.5,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Statfjord,Norway,Vestland,61.26,1.91,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Stavanger,Norway,Rogaland,58.975,5.745,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Sture,Norway,Vestland,60.62,4.86,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Sundal,Norway,Vestland,62.68,8.55,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Sunndalsøra,Norway,Møre og Romsdal,62.68,8.55,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Sveio,Norway,Vestland,60.85,5.07,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Svelgen,Norway,Vestland,61.77,5.28,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Sykkylven,Norway,Møre og Romsdal,62.39,6.56,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Tananger,Norway,Rogaland,58.93,5.6,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Tangen,Norway,Innlandet,59.74,10.24,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Tonsberg,Norway,Vestfold og Telemark,59.27,10.4,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Trondheim,Norway,Trøndelag,63.44,10.41,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Valløy,Norway,Vestfold og Telemark,59.26,10.49,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Gdansk,Poland,Pomerania,54.38,18.66,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Gdynia,Poland,Pomeranian Voivodeship,54.53,18.54,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Police,Poland,West Pomeranian Voivodeship,53.55,14.6,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Port Północny,Poland,Pomeranian Voivodeship,54.4,18.72,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Szczecin,Poland,West Pomeranian Voivodeship,53.44,14.58,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Świnoujście,Poland,West Pomeranian Voivodeship,53.9,14.25,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Baltiysk,Russia,Kaliningrad Oblast,54.63,19.92,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kaliningrad,Russia,Kaliningrad Oblast,54.7,20.45,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kronshtadt,Russia,Saint Petersburg,60.04,29.585,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Lomonosov,Russia,Saint Petersburg,59.93,29.78,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Primorsk,Russia,Leningrad Oblast,60.33,28.7,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+St Petersburg,Russia,Russia,59.88,30.18,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Svetliy,Russia,Kaliningrad Oblast,54.64,19.96,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Ust-Luga,Russia,Leningrad Oblast,59.69,28.42,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Vyborg,Russia,Leningrad Oblast,60.71,28.73,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Vysotsk,Russia,Leningrad Oblast,60.62,28.56,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Axelsvik,Sweden,Stockholm County,65.77,23.38,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Bollsta,Sweden,Västernorrland,62.64,17.94,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Braviken,Sweden,Östergötland,58.6,16.22,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Brofjorden,Sweden,Västra Götaland.,58.36,11.44,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Bådo,Sweden,Västra Götaland,58.34,11.9,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Djurö,Sweden,Stockholm,58.6,16.22,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Domsjö,Sweden,Västernorrland,63.26,18.71,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+EC Sweden,Sweden,Sweden,59.72,19.07,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Edstrandsbassangen,Sweden,Västmanland,58.6,16.22,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Falkenberg,Sweden,Halland,56.9,12.49,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Froland,Sweden,Västra Götaland,58.34,11.9,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Färjestaden,Sweden,Kalmar County,60.68,17.19,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Gastgivarehagen,Sweden,Sweden,58.6,16.22,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Gavle,Sweden,Gävleborg,60.68,17.19,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Gothenburg,Sweden,Västra Götaland,57.7,12.69,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Gotland,Sweden,Sweden,57.32,17.63,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Hallstavik,Sweden,Stockholm County,60.06,18.59,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Halmstad,Sweden,Halland,56.65,12.84,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Helsingborg,Sweden,Skåne County,56.03,12.69,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Hudiksvall,Sweden,Gävleborg,61.72,17.12,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Husum,Sweden,Västernorrland,63.29,18.71,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Härnösand,Sweden,Västernorrland,62.64,17.94,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kalmar,Sweden,Kalmar County,58.675,16.795,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kapellskär,Sweden,Stockholm,59.72,19.07,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Karlshamn,Sweden,Blekinge,56.155,14.84,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Karlshäll,Sweden,Norrbotten,65.57,22.17,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Karlskrona,Sweden,Blekinge,58.43,16.435,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Karlsvik,Sweden,Norrbotten,65.57,22.17,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Karskar - Langharen,Sweden,Västra Götaland,60.69,17.28,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Kåge,Sweden,Västerbotten,64.69,21.22,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Köping,Sweden,Västmanland,59.5,16.02,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Landskrona,Sweden,Skåne,55.86,12.83,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Langror,Sweden,Sweden,61.31,17.07,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Limhamn,Sweden,Skåne County,55.59,12.93,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Lugnvik,Sweden,Jämtland,62.64,17.94,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Lulea,Sweden,Norrbotten,65.57,22.17,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Lysekil,Sweden,Västra Götaland,58.27,11.44,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Malmo,Sweden,Skåne,55.62,12.99,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Malmö,Sweden,Skåne,55.64,13.02,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Nacka,Sweden,Stockholm,59.32,18.17,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Norrköping,Sweden,Östergötland,58.6,16.22,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Nyhamn,Sweden,Skåne County,55.86,12.83,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Nynashamn,Sweden,Stockholm,58.92,17.97,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Nynäshamn,Sweden,Stockholm County,63.7,20.34,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Orrskär,Sweden,Gävleborg County,61.31,17.07,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Ortviken,Sweden,Västernorrland,62.39,17.35,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Oskarshamn,Sweden,Kalmar County,57.26,16.47,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Ostrand,Sweden,Västernorrland,62.39,17.35,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Oxelösund,Sweden,Södermanland,58.66,17.12,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Oxhaga Harbour,Sweden,Sweden,56.16,14.86,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Paskallavik,Sweden,Kalmar County,57.26,16.47,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Piteå,Sweden,Norrbotten,65.23,21.63,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Ramshall,Sweden,Halland,58.6,16.22,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Rya,Sweden,Skåne County,57.7,11.93,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Rönnskär,Sweden,Västerbotten,64.69,21.22,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+S Sweden,Sweden,Sweden,55.42,13.82,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Sandarne,Sweden,Gävleborg,61.31,17.07,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Skagen,Sweden,Sweden,57.73,10.63,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Skelleftehamn,Sweden,Västerbotten County,64.69,21.22,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Skoghall,Sweden,Värmland County,59.32,13.47,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Skredsvik,Sweden,Västra Götaland.,58.38,11.65,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Slite,Sweden,Gotland,57.66,18.86,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Soderhamn,Sweden,Gavleborg County,61.31,17.07,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Sodertalje,Sweden,Stockholm County,59.19,17.63,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Stenungsund,Sweden,Västra Götaland,58.08,11.8,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Stockholm,Sweden,Stockholm County,59.35,18.13,25,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Stugsund,Sweden,Gävleborg,61.31,17.07,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Sundsvall,Sweden,Västernorrland,62.385,17.36,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Sutudden Harbour,Sweden,Stockholm County,56.16,14.86,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Sölvesborg,Sweden,Blekinge,56.05,14.59,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Söråker,Sweden,Västernorrland,62.39,17.35,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Tallbacken,Sweden,Stockholm County.,58.6,16.22,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Tjörn,Sweden,Västra Götaland,58.01,11.7,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Trelleborg,Sweden,Skåne,55.37,13.15,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Uddebo,Sweden,Västra Götaland,65.57,22.17,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Uddevalla,Sweden,Västra Götaland,58.34,11.9,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Umea,Sweden,Västerbotten County,63.7,20.34,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Utansjö,Sweden,Västernorrland,62.64,17.94,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Varberg,Sweden,Halland,57.11,12.24,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Visby,Sweden,Gotland,57.63,18.28,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Väja,Sweden,Västernorrland,62.64,17.94,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Västervik,Sweden,Kalmar County,57.76,16.65,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Västerås,Sweden,Västmanland,59.59,16.52,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Ystad,Sweden,Skåne,55.42,13.82,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Åhus,Sweden,Skåne County,55.93,14.33,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Öhmans,Sweden,Västerbotten,58.6,16.22,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json
+Örnsköldsvik,Sweden,Västernorrland,63.29,18.71,20,https://raw.githubusercontent.com/tayljordan/ports/main/ports.json

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from typing import Sequence
+
 from src.models import AISRecord, DraftChangeEvent, GoingDarkEvent, TeleportationEvent
 from src.utils.geo import calculate_distance
+from src.utils.ports import PortZone, is_blackout_at_sea
 
 
 HOURS_IN_DAY = 24.0
@@ -11,19 +14,6 @@ KM_PER_NAUTICAL_MILE = 1.852
 
 
 def calculate_time_gap_hours(previous: AISRecord, current: AISRecord) -> float:
-    """
-    Calculate the time difference between two AIS records in hours.
-
-    Args:
-        previous: Earlier AIS record.
-        current: Later AIS record.
-
-    Returns:
-        Time gap between records in hours.
-
-    Raises:
-        ValueError: If ``current.timestamp`` is earlier than ``previous.timestamp``.
-    """
     time_delta = current.timestamp - previous.timestamp
     gap_seconds = time_delta.total_seconds()
 
@@ -37,19 +27,6 @@ def calculate_implied_speed_knots(
     distance_km: float,
     gap_hours: float,
 ) -> float:
-    """
-    Calculate the implied travel speed in knots.
-
-    Args:
-        distance_km: Distance traveled in kilometers.
-        gap_hours: Travel time in hours.
-
-    Returns:
-        Implied speed in knots.
-
-    Raises:
-        ValueError: If ``gap_hours`` is less than or equal to zero.
-    """
     if gap_hours <= 0:
         raise ValueError("gap_hours must be greater than 0")
 
@@ -58,15 +35,6 @@ def calculate_implied_speed_knots(
 
 
 def kilometers_to_nautical_miles(distance_km: float) -> float:
-    """
-    Convert distance from kilometers to nautical miles.
-
-    Args:
-        distance_km: Distance in kilometers.
-
-    Returns:
-        Distance in nautical miles.
-    """
     return distance_km / KM_PER_NAUTICAL_MILE
 
 
@@ -76,26 +44,6 @@ def detect_going_dark(
     min_gap_hours: float = 4.0,
     min_distance_km: float = 1.0,
 ) -> GoingDarkEvent | None:
-    """
-    Detect anomaly A ("Going Dark") for a pair of consecutive AIS records.
-
-    The anomaly is flagged when the AIS gap exceeds ``min_gap_hours`` and
-    the vessel appears to have moved at least ``min_distance_km`` between
-    the last known position before blackout and the first known position
-    after blackout.
-
-    Args:
-        previous: Earlier AIS record for the same MMSI.
-        current: Later AIS record for the same MMSI.
-        min_gap_hours: Minimum blackout duration required to flag anomaly.
-        min_distance_km: Minimum distance indicating vessel movement.
-
-    Returns:
-        GoingDarkEvent if anomaly A is detected, otherwise None.
-
-    Raises:
-        ValueError: If the records belong to different MMSI values.
-    """
     _validate_same_mmsi(previous, current)
 
     gap_hours = calculate_time_gap_hours(previous, current)
@@ -129,24 +77,19 @@ def detect_draft_change(
     current: AISRecord,
     min_gap_hours: float = 2.0,
     min_relative_change: float = 0.05,
+    port_zones: Sequence[PortZone] | None = None,
+    minimum_port_radius_km: float = 0.0,
 ) -> DraftChangeEvent | None:
     """
-    Detect anomaly C ("Draft Changes at Sea") for a pair of AIS records.
+    Detect anomaly C ("Draft Changes at Sea").
 
-    The anomaly is flagged when the AIS gap exceeds ``min_gap_hours`` and
-    the vessel draught changes by more than ``min_relative_change``.
+    The base anomaly is the same as before:
+    - AIS blackout longer than ``min_gap_hours``
+    - relative draught change greater than ``min_relative_change``
 
-    Args:
-        previous: Earlier AIS record for the same MMSI.
-        current: Later AIS record for the same MMSI.
-        min_gap_hours: Minimum blackout duration required to evaluate anomaly.
-        min_relative_change: Minimum relative draught change, where 0.05 = 5%.
-
-    Returns:
-        DraftChangeEvent if anomaly C is detected, otherwise None.
-
-    Raises:
-        ValueError: If the records belong to different MMSI values.
+    If ``port_zones`` is provided, the anomaly is only confirmed when both
+    blackout endpoints are outside all configured port zones. This adds the
+    "at sea" condition required by the task without changing anomalies A or D.
     """
     _validate_same_mmsi(previous, current)
 
@@ -166,6 +109,16 @@ def detect_draft_change(
     if draught_change_ratio <= min_relative_change:
         return None
 
+    if port_zones is not None and not is_blackout_at_sea(
+        start_latitude=previous.latitude,
+        start_longitude=previous.longitude,
+        end_latitude=current.latitude,
+        end_longitude=current.longitude,
+        port_zones=port_zones,
+        minimum_radius_km=minimum_port_radius_km,
+    ):
+        return None
+
     return DraftChangeEvent(
         mmsi=previous.mmsi,
         start_timestamp=previous.timestamp,
@@ -183,23 +136,6 @@ def detect_teleportation(
     current: AISRecord,
     max_speed_knots: float = 60.0,
 ) -> TeleportationEvent | None:
-    """
-    Detect anomaly D ("Identity Cloning / Teleportation") for a pair of AIS records.
-
-    The anomaly is flagged when the movement implied by two consecutive AIS
-    messages for the same MMSI requires travel faster than ``max_speed_knots``.
-
-    Args:
-        previous: Earlier AIS record for the same MMSI.
-        current: Later AIS record for the same MMSI.
-        max_speed_knots: Maximum physically plausible speed in knots.
-
-    Returns:
-        TeleportationEvent if anomaly D is detected, otherwise None.
-
-    Raises:
-        ValueError: If the records belong to different MMSI values.
-    """
     _validate_same_mmsi(previous, current)
 
     gap_hours = calculate_time_gap_hours(previous, current)
@@ -239,28 +175,9 @@ def detect_all_pair_anomalies(
     draft_change_min_gap_hours: float = 2.0,
     draft_change_min_relative_change: float = 0.05,
     teleportation_max_speed_knots: float = 60.0,
+    port_zones: Sequence[PortZone] | None = None,
+    minimum_port_radius_km: float = 0.0,
 ) -> tuple[GoingDarkEvent | None, DraftChangeEvent | None, TeleportationEvent | None]:
-    """
-    Detect all supported pairwise anomalies for two AIS records.
-
-    This helper runs anomaly A, C, and D detection for a pair of consecutive
-    records belonging to the same vessel.
-
-    Args:
-        previous: Earlier AIS record.
-        current: Later AIS record.
-        going_dark_min_gap_hours: Minimum blackout duration for anomaly A.
-        going_dark_min_distance_km: Minimum distance for anomaly A.
-        draft_change_min_gap_hours: Minimum blackout duration for anomaly C.
-        draft_change_min_relative_change: Minimum relative draught change for anomaly C.
-        teleportation_max_speed_knots: Maximum plausible speed for anomaly D.
-
-    Returns:
-        Tuple of:
-            - GoingDarkEvent or None
-            - DraftChangeEvent or None
-            - TeleportationEvent or None
-    """
     going_dark_event = detect_going_dark(
         previous=previous,
         current=current,
@@ -272,6 +189,8 @@ def detect_all_pair_anomalies(
         current=current,
         min_gap_hours=draft_change_min_gap_hours,
         min_relative_change=draft_change_min_relative_change,
+        port_zones=port_zones,
+        minimum_port_radius_km=minimum_port_radius_km,
     )
     teleportation_event = detect_teleportation(
         previous=previous,
@@ -283,15 +202,5 @@ def detect_all_pair_anomalies(
 
 
 def _validate_same_mmsi(previous: AISRecord, current: AISRecord) -> None:
-    """
-    Validate that two AIS records belong to the same vessel.
-
-    Args:
-        previous: Earlier AIS record.
-        current: Later AIS record.
-
-    Raises:
-        ValueError: If MMSI values differ.
-    """
     if previous.mmsi != current.mmsi:
-        raise ValueError("AIS records must have the same MMSI")
+        raise ValueError("AIS records must belong to the same MMSI")

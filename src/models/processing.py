@@ -58,3 +58,41 @@ class ChunkProcessingResult:
     row_count: int
     elapsed_time: float
     vessel_summaries: dict[int, VesselChunkSummary]
+
+
+@dataclass(slots=True)
+class VesselGlobalSummary:
+    """
+    Fully merged anomaly summary for a vessel across all processed chunks.
+
+    This object is constructed in the main process after combining the
+    partial results produced by worker processes. It aggregates all
+    locally detected anomalies and includes additional events detected
+    across chunk boundaries.
+
+    The summary contains the final metrics required for computing the
+    DFSI (Dark Fleet Suspicion Index).
+
+    Attributes:
+        mmsi: Vessel MMSI identifier.
+        record_count: Total number of valid AIS records processed
+            for this vessel across all chunks.
+        max_gap_hours: Maximum AIS blackout duration contributing
+            to anomaly A ("Going Dark").
+        total_impossible_jump_km: Sum of all impossible distance
+            jumps detected for anomaly D ("Teleportation").
+        draft_change_count: Total number of anomaly C events
+            (significant draught changes during AIS blackout).
+        going_dark_events: All detected anomaly A events for the vessel.
+        draft_change_events: All detected anomaly C events for the vessel.
+        teleportation_events: All detected anomaly D events for the vessel.
+    """
+
+    mmsi: int
+    record_count: int
+    max_gap_hours: float = 0.0
+    total_impossible_jump_km: float = 0.0
+    draft_change_count: int = 0
+    going_dark_events: list[GoingDarkEvent] = field(default_factory=list)
+    draft_change_events: list[DraftChangeEvent] = field(default_factory=list)
+    teleportation_events: list[TeleportationEvent] = field(default_factory=list)

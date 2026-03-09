@@ -14,8 +14,17 @@ from .rules import (
     detect_teleportation,
     kilometers_to_nautical_miles,
 )
-from .merge import merge_chunk_results
-from .scoring import calculate_all_dfsi, calculate_dfsi, rank_vessels_by_dfsi
+from .merge import (
+    MergeState,
+    create_merge_state,
+    merge_chunk_result_into_state,
+    merge_chunk_results,
+)
+from .scoring import (
+    calculate_all_dfsi,
+    calculate_dfsi,
+    rank_vessels_by_dfsi
+)
 
 __all__ = [
     "calculate_time_gap_hours",
@@ -25,6 +34,9 @@ __all__ = [
     "detect_draft_change",
     "detect_teleportation",
     "detect_all_pair_anomalies",
+    "MergeState",
+    "create_merge_state",
+    "merge_chunk_result_into_state",
     "merge_chunk_results",
     "calculate_dfsi",
     "calculate_all_dfsi",

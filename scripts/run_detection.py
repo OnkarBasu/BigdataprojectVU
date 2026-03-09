@@ -1,20 +1,24 @@
 from __future__ import annotations
 
-import csv
 import argparse
+import csv
 import time
 from multiprocessing import Pool
 from pathlib import Path
 
-from src.anomaly_detection import calculate_all_dfsi, merge_chunk_results
+from src.anomaly_detection import (
+    calculate_all_dfsi,
+    create_merge_state,
+    merge_chunk_result_into_state,
+)
 from src.parallel import process_chunk
-from src.streaming import stream_csv_files_in_chunks
 from src.performance import (
+    MemorySample,
     collect_memory_sample,
     get_current_process,
-    get_rss_mb,
-    MemorySample
+    get_rss_mb
 )
+from src.streaming import stream_csv_files_in_chunks
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -36,7 +40,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--chunk-size",
         type=int,
-        default=50_000,
+        default=100_000,
         help="Number of valid AIS records per chunk.",
     )
     parser.add_argument(
@@ -79,6 +83,11 @@ def write_results_csv(
 ) -> None:
     """
     Write vessel DFSI results to a CSV file.
+
+    Args:
+        output_file: Path to the output CSV file.
+        ranked_scores: Ranked list of (MMSI, DFSI) pairs.
+        global_summaries: Final merged vessel summaries keyed by MMSI.
     """
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -165,12 +174,12 @@ def main() -> None:
     args = parser.parse_args()
 
     input_files: list[Path] = args.input_files
-    output_file: Path = args.output
-    memory_output_file: Path = args.memory_output
     chunk_size: int = args.chunk_size
     workers: int = args.workers
     encoding: str = args.encoding
     top_n: int = args.top
+    output_file: Path = args.output
+    memory_output_file: Path = args.memory_output
 
     if chunk_size <= 0:
         raise ValueError("chunk_size must be greater than 0")
@@ -184,8 +193,7 @@ def main() -> None:
 
     start_time = time.perf_counter()
     process = get_current_process()
-
-    memory_samples = []
+    memory_samples: list[MemorySample] = []
 
     print("=" * 80)
     print("SHADOW FLEET DETECTION")
@@ -197,9 +205,9 @@ def main() -> None:
     print(f"Workers:    {workers}")
     print("=" * 80)
 
-    chunk_results = []
     processed_valid_records = 0
     completed_chunks = 0
+    merge_state = create_merge_state()
 
     tasks = stream_csv_files_in_chunks(
         file_paths=input_files,
@@ -208,10 +216,15 @@ def main() -> None:
     )
 
     with Pool(processes=workers) as pool:
-        for chunk_result in pool.imap_unordered(process_chunk, tasks, chunksize=1):
-            chunk_results.append(chunk_result)
+        for chunk_result in pool.imap(process_chunk, tasks, chunksize=1):
+            merge_chunk_result_into_state(
+                merge_state=merge_state,
+                chunk_result=chunk_result,
+            )
+
             processed_valid_records += chunk_result.row_count
             completed_chunks += 1
+
             sample = collect_memory_sample(
                 start_time=start_time,
                 completed_chunks=completed_chunks,
@@ -231,7 +244,7 @@ def main() -> None:
                 f"Total RSS: {sample.total_rss_mb:.2f} MB"
             )
 
-    global_summaries = merge_chunk_results(chunk_results)
+    global_summaries = merge_state.global_summaries
     dfsi_scores = calculate_all_dfsi(global_summaries)
 
     ranked_scores = sorted(
@@ -240,18 +253,18 @@ def main() -> None:
         reverse=True,
     )
 
-    total_time = time.perf_counter() - start_time
-
-    peak_main_rss_mb = max((sample.main_rss_mb for sample in memory_samples), default=0.0)
-    peak_workers_rss_mb = max((sample.workers_rss_mb for sample in memory_samples), default=0.0)
-    peak_total_rss_mb = max((sample.total_rss_mb for sample in memory_samples), default=0.0)
-    final_memory_rss_mb = get_rss_mb(process)
-
     write_results_csv(output_file, ranked_scores, global_summaries)
     print(f"\nResults written to: {output_file}")
 
     write_memory_samples_csv(memory_output_file, memory_samples)
     print(f"Memory profile written to: {memory_output_file}")
+
+    total_time = time.perf_counter() - start_time
+    final_memory_rss_mb = get_rss_mb(process)
+
+    peak_main_rss_mb = max((sample.main_rss_mb for sample in memory_samples), default=0.0)
+    peak_workers_rss_mb = max((sample.workers_rss_mb for sample in memory_samples), default=0.0)
+    peak_total_rss_mb = max((sample.total_rss_mb for sample in memory_samples), default=0.0)
 
     print("\n" + "=" * 80)
     print("RESULT SUMMARY")
@@ -260,10 +273,10 @@ def main() -> None:
     print(f"Processed valid records: {processed_valid_records}")
     print(f"Completed chunks:        {completed_chunks}")
     print(f"Total runtime:           {total_time:.2f} sec")
-    print(f"Peak main RSS:          {peak_main_rss_mb:.2f} MB")
-    print(f"Peak workers RSS:       {peak_workers_rss_mb:.2f} MB")
-    print(f"Peak total RSS:         {peak_total_rss_mb:.2f} MB")
-    print(f"Final memory RSS:       {final_memory_rss_mb:.2f} MB")
+    print(f"Peak main RSS:           {peak_main_rss_mb:.2f} MB")
+    print(f"Peak workers RSS:        {peak_workers_rss_mb:.2f} MB")
+    print(f"Peak total RSS:          {peak_total_rss_mb:.2f} MB")
+    print(f"Final memory RSS:        {final_memory_rss_mb:.2f} MB")
     print("=" * 80)
 
     print(f"Top {min(top_n, len(ranked_scores))} vessels by DFSI:")

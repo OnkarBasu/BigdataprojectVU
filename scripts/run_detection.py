@@ -9,7 +9,7 @@ from pathlib import Path
 from src.anomaly_detection import calculate_all_dfsi, merge_chunk_results
 from src.parallel import process_chunk
 from src.streaming import stream_csv_files_in_chunks
-from src.performance import collect_memory_sample, get_current_process
+from src.performance import collect_memory_sample, get_current_process, get_rss_mb
 
 
 def build_argument_parser() -> argparse.ArgumentParser:

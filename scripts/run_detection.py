@@ -9,7 +9,7 @@ from pathlib import Path
 from src.anomaly_detection import calculate_all_dfsi, merge_chunk_results
 from src.parallel import process_chunk
 from src.streaming import stream_csv_files_in_chunks
-from src.performance import get_current_process, get_rss_mb
+from src.performance import collect_memory_sample, get_current_process
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -130,9 +130,10 @@ def main() -> None:
         if not input_file.exists():
             raise FileNotFoundError(f"Input file not found: {input_file}")
 
+    start_time = time.perf_counter()
     process = get_current_process()
 
-    start_time = time.perf_counter()
+    memory_samples = []
 
     print("=" * 80)
     print("SHADOW FLEET DETECTION")
@@ -159,7 +160,13 @@ def main() -> None:
             chunk_results.append(chunk_result)
             processed_valid_records += chunk_result.row_count
             completed_chunks += 1
-            memory_rss_mb = get_rss_mb(process)
+            sample = collect_memory_sample(
+                start_time=start_time,
+                completed_chunks=completed_chunks,
+                processed_valid_records=processed_valid_records,
+                process=process,
+            )
+            memory_samples.append(sample)
 
             print(
                 f"Chunk {chunk_result.chunk_id} processed in "
@@ -167,7 +174,9 @@ def main() -> None:
                 f"Valid records in chunk: {chunk_result.row_count} | "
                 f"Processed valid records: {processed_valid_records} | "
                 f"Completed chunks: {completed_chunks} | "
-                f"Memory RSS: {memory_rss_mb:.2f} MB"
+                f"Main RSS: {sample.main_rss_mb:.2f} MB | "
+                f"Workers RSS: {sample.workers_rss_mb:.2f} MB | "
+                f"Total RSS: {sample.total_rss_mb:.2f} MB"
             )
 
     global_summaries = merge_chunk_results(chunk_results)
@@ -183,7 +192,7 @@ def main() -> None:
 
     final_memory_rss_mb = get_rss_mb(process)
 
-    write_results_csv(output_file, ranked_scores, global_summaries)
+    # write_results_csv(output_file, ranked_scores, global_summaries)
 
     print(f"\nResults written to: {output_file}")
 

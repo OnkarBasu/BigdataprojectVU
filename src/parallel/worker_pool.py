@@ -5,9 +5,12 @@ from collections import defaultdict
 from typing import DefaultDict
 
 from src.anomaly_detection import detect_all_pair_anomalies
-
 from src.models import AISRecord, ChunkProcessingResult, VesselChunkSummary
 from src.streaming import Chunk
+from src.utils import load_port_zones
+
+
+PORT_ZONES = load_port_zones()
 
 
 def process_chunk(task: Chunk) -> ChunkProcessingResult:
@@ -98,6 +101,7 @@ def _build_vessel_chunk_summary(
         going_dark_event, draft_change_event, teleportation_event = detect_all_pair_anomalies(
             previous=previous,
             current=current,
+            port_zones=PORT_ZONES,
         )
 
         if going_dark_event is not None:

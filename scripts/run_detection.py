@@ -16,9 +16,10 @@ from src.performance import (
     MemorySample,
     collect_memory_sample,
     get_current_process,
-    get_rss_mb
+    get_rss_mb,
 )
 from src.streaming import stream_csv_files_in_chunks
+from src.utils import load_port_zones
 
 
 def worker_init() -> None:
@@ -217,6 +218,7 @@ def main() -> None:
     processed_valid_records = 0
     completed_chunks = 0
     merge_state = create_merge_state()
+    port_zones = load_port_zones()
 
     tasks = stream_csv_files_in_chunks(
         file_paths=input_files,
@@ -229,6 +231,7 @@ def main() -> None:
             merge_chunk_result_into_state(
                 merge_state=merge_state,
                 chunk_result=chunk_result,
+                port_zones=port_zones,
             )
 
             processed_valid_records += chunk_result.row_count

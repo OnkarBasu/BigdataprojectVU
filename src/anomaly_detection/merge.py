@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Sequence
 
 from src.anomaly_detection import detect_all_pair_anomalies
 from src.models import AISRecord, ChunkProcessingResult, VesselChunkSummary
 from src.models.processing import VesselGlobalSummary
+from src.utils.ports import PortZone
 
 
 @dataclass(slots=True)
@@ -48,6 +50,8 @@ def create_merge_state() -> MergeState:
 def merge_chunk_result_into_state(
     merge_state: MergeState,
     chunk_result: ChunkProcessingResult,
+    port_zones: Sequence[PortZone] | None = None,
+    minimum_port_radius_km: float = 0.0,
 ) -> None:
     """
     Merge a single chunk result into the incremental global state.
@@ -71,6 +75,8 @@ def merge_chunk_result_into_state(
             boundary_state=merge_state.boundary_states.get(mmsi),
             current_chunk_id=chunk_result.chunk_id,
             current_summary=chunk_summary,
+            port_zones=port_zones,
+            minimum_port_radius_km=minimum_port_radius_km,
         )
 
         merge_state.boundary_states[mmsi] = BoundaryState(
@@ -81,6 +87,8 @@ def merge_chunk_result_into_state(
 
 def merge_chunk_results(
     chunk_results: list[ChunkProcessingResult],
+    port_zones: Sequence[PortZone] | None = None,
+    minimum_port_radius_km: float = 0.0,
 ) -> dict[int, VesselGlobalSummary]:
     """
     Merge per-chunk worker results into global per-vessel summaries.
@@ -100,7 +108,12 @@ def merge_chunk_results(
     merge_state = create_merge_state()
 
     for chunk_result in sorted(chunk_results, key=lambda result: result.chunk_id):
-        merge_chunk_result_into_state(merge_state, chunk_result)
+        merge_chunk_result_into_state(
+            merge_state=merge_state,
+            chunk_result=chunk_result,
+            port_zones=port_zones,
+            minimum_port_radius_km=minimum_port_radius_km,
+        )
 
     return merge_state.global_summaries
 
@@ -134,6 +147,8 @@ def _merge_boundary_anomalies(
     boundary_state: BoundaryState | None,
     current_chunk_id: int,
     current_summary: VesselChunkSummary,
+    port_zones: Sequence[PortZone] | None = None,
+    minimum_port_radius_km: float = 0.0,
 ) -> None:
     """
     Detect and merge anomalies spanning across chunk boundaries.
@@ -156,6 +171,8 @@ def _merge_boundary_anomalies(
     going_dark_event, draft_change_event, teleportation_event = detect_all_pair_anomalies(
         previous=previous_record,
         current=current_record,
+        port_zones=port_zones,
+        minimum_port_radius_km=minimum_port_radius_km,
     )
 
     if going_dark_event is not None:

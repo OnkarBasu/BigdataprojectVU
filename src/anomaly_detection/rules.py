@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from typing import Sequence
+
 from src.models import AISRecord, DraftChangeEvent, GoingDarkEvent, TeleportationEvent
 from src.utils.geo import calculate_distance
+from src.utils.ports import PortZone, is_blackout_at_sea
 
 
 HOURS_IN_DAY = 24.0
@@ -129,24 +132,19 @@ def detect_draft_change(
     current: AISRecord,
     min_gap_hours: float = 2.0,
     min_relative_change: float = 0.05,
+    port_zones: Sequence[PortZone] | None = None,
+    minimum_port_radius_km: float = 0.0,
 ) -> DraftChangeEvent | None:
     """
-    Detect anomaly C ("Draft Changes at Sea") for a pair of AIS records.
+    Detect anomaly C ("Draft Changes at Sea").
 
-    The anomaly is flagged when the AIS gap exceeds ``min_gap_hours`` and
-    the vessel draught changes by more than ``min_relative_change``.
+    The base anomaly is the same as before:
+    - AIS blackout longer than ``min_gap_hours``
+    - relative draught change greater than ``min_relative_change``
 
-    Args:
-        previous: Earlier AIS record for the same MMSI.
-        current: Later AIS record for the same MMSI.
-        min_gap_hours: Minimum blackout duration required to evaluate anomaly.
-        min_relative_change: Minimum relative draught change, where 0.05 = 5%.
-
-    Returns:
-        DraftChangeEvent if anomaly C is detected, otherwise None.
-
-    Raises:
-        ValueError: If the records belong to different MMSI values.
+    If ``port_zones`` is provided, the anomaly is only confirmed when both
+    blackout endpoints are outside all configured port zones. This adds the
+    "at sea" condition required by the task without changing anomalies A or D.
     """
     _validate_same_mmsi(previous, current)
 
@@ -164,6 +162,16 @@ def detect_draft_change(
     draught_change_ratio = draught_change_abs / previous.draught
 
     if draught_change_ratio <= min_relative_change:
+        return None
+
+    if port_zones is not None and not is_blackout_at_sea(
+        start_latitude=previous.latitude,
+        start_longitude=previous.longitude,
+        end_latitude=current.latitude,
+        end_longitude=current.longitude,
+        port_zones=port_zones,
+        minimum_radius_km=minimum_port_radius_km,
+    ):
         return None
 
     return DraftChangeEvent(
@@ -239,6 +247,8 @@ def detect_all_pair_anomalies(
     draft_change_min_gap_hours: float = 2.0,
     draft_change_min_relative_change: float = 0.05,
     teleportation_max_speed_knots: float = 60.0,
+    port_zones: Sequence[PortZone] | None = None,
+    minimum_port_radius_km: float = 0.0,
 ) -> tuple[GoingDarkEvent | None, DraftChangeEvent | None, TeleportationEvent | None]:
     """
     Detect all supported pairwise anomalies for two AIS records.
@@ -272,6 +282,8 @@ def detect_all_pair_anomalies(
         current=current,
         min_gap_hours=draft_change_min_gap_hours,
         min_relative_change=draft_change_min_relative_change,
+        port_zones=port_zones,
+        minimum_port_radius_km=minimum_port_radius_km,
     )
     teleportation_event = detect_teleportation(
         previous=previous,
@@ -294,4 +306,4 @@ def _validate_same_mmsi(previous: AISRecord, current: AISRecord) -> None:
         ValueError: If MMSI values differ.
     """
     if previous.mmsi != current.mmsi:
-        raise ValueError("AIS records must have the same MMSI")
+        raise ValueError("AIS records must belong to the same MMSI")

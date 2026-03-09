@@ -2,13 +2,10 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
-from typing import Generator
+from typing import Generator, Iterable
 
 from src.models import AISRecord
-from src.streaming import AISRowParser
-
-
-Chunk = tuple[int, list[AISRecord]]
+from src.streaming import AISRowParser, Chunk
 
 
 def stream_records(
@@ -44,13 +41,35 @@ def stream_records(
                 yield record
 
 
+def stream_records_from_files(
+    file_paths: Iterable[str | Path],
+    encoding: str = "utf-8",
+) -> Generator[AISRecord, None, None]:
+    """
+    Stream valid AIS records sequentially from multiple CSV files.
+
+    Files are processed in the order they are provided. This makes it possible
+    to treat several daily AIS files as one continuous input stream for
+    downstream chunking and anomaly detection.
+
+    Args:
+        file_paths: Iterable of paths to AIS CSV files.
+        encoding: File encoding used when opening each file.
+
+    Yields:
+        AISRecord: Parsed and validated AIS records from all input files.
+    """
+    for file_path in file_paths:
+        yield from stream_records(file_path=file_path, encoding=encoding)
+
+
 def stream_csv_in_chunks(
     file_path: str | Path,
     chunk_size: int,
     encoding: str = "utf-8",
 ) -> Generator[Chunk, None, None]:
     """
-    Stream AIS records from a CSV file in fixed-size chunks.
+    Stream AIS records from a single CSV file in fixed-size chunks.
 
     This function uses ``stream_records`` to read AIS records and groups them
     into chunks of a specified size. Each chunk is assigned a sequential
@@ -72,13 +91,45 @@ def stream_csv_in_chunks(
     Raises:
         ValueError: If ``chunk_size`` is less than or equal to zero.
     """
+    yield from stream_csv_files_in_chunks(
+        file_paths=[file_path],
+        chunk_size=chunk_size,
+        encoding=encoding,
+    )
+
+
+def stream_csv_files_in_chunks(
+    file_paths: Iterable[str | Path],
+    chunk_size: int,
+    encoding: str = "utf-8",
+) -> Generator[Chunk, None, None]:
+    """
+    Stream AIS records from multiple CSV files in fixed-size chunks.
+
+    Files are processed sequentially in the order they are provided, and
+    chunk IDs continue across file boundaries. This allows the downstream
+    pipeline to treat multiple daily AIS files as one continuous stream.
+
+    Args:
+        file_paths: Iterable of paths to AIS CSV files.
+        chunk_size: Number of AIS records per chunk.
+        encoding: File encoding used when opening each file.
+
+    Yields:
+        Chunk: A tuple containing:
+            - chunk_id (int): Sequential chunk identifier.
+            - records (list[AISRecord]): List of AIS records in the chunk.
+
+    Raises:
+        ValueError: If ``chunk_size`` is less than or equal to zero.
+    """
     if chunk_size <= 0:
         raise ValueError("chunk_size must be greater than 0")
 
     chunk: list[AISRecord] = []
     chunk_id = 0
 
-    for record in stream_records(file_path=file_path, encoding=encoding):
+    for record in stream_records_from_files(file_paths=file_paths, encoding=encoding):
         chunk.append(record)
 
         if len(chunk) >= chunk_size:

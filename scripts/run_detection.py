@@ -9,6 +9,7 @@ from pathlib import Path
 from src.anomaly_detection import calculate_all_dfsi, merge_chunk_results
 from src.parallel import process_chunk
 from src.streaming import stream_csv_files_in_chunks
+from src.performance import get_current_process, get_rss_mb
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -129,6 +130,8 @@ def main() -> None:
         if not input_file.exists():
             raise FileNotFoundError(f"Input file not found: {input_file}")
 
+    process = get_current_process()
+
     start_time = time.perf_counter()
 
     print("=" * 80)
@@ -156,13 +159,15 @@ def main() -> None:
             chunk_results.append(chunk_result)
             processed_valid_records += chunk_result.row_count
             completed_chunks += 1
+            memory_rss_mb = get_rss_mb(process)
 
             print(
                 f"Chunk {chunk_result.chunk_id} processed in "
                 f"{chunk_result.elapsed_time:.4f} sec | "
                 f"Valid records in chunk: {chunk_result.row_count} | "
                 f"Processed valid records: {processed_valid_records} | "
-                f"Completed chunks: {completed_chunks}"
+                f"Completed chunks: {completed_chunks} | "
+                f"Memory RSS: {memory_rss_mb:.2f} MB"
             )
 
     global_summaries = merge_chunk_results(chunk_results)
@@ -176,6 +181,8 @@ def main() -> None:
 
     total_time = time.perf_counter() - start_time
 
+    final_memory_rss_mb = get_rss_mb(process)
+
     write_results_csv(output_file, ranked_scores, global_summaries)
 
     print(f"\nResults written to: {output_file}")
@@ -187,6 +194,7 @@ def main() -> None:
     print(f"Processed valid records: {processed_valid_records}")
     print(f"Completed chunks:        {completed_chunks}")
     print(f"Total runtime:           {total_time:.2f} sec")
+    print(f"Final memory RSS:       {final_memory_rss_mb:.2f} MB")
     print("=" * 80)
 
     print(f"Top {min(top_n, len(ranked_scores))} vessels by DFSI:")

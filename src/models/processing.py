@@ -1,0 +1,60 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from src.models.ais import AISRecord
+from src.models.events import DraftChangeEvent, GoingDarkEvent, TeleportationEvent
+
+
+@dataclass(slots=True)
+class VesselChunkSummary:
+    """
+    Partial anomaly-analysis result for one vessel inside a single chunk.
+
+    A worker process builds this summary for each MMSI that appears in the
+    chunk. The summary contains:
+    - boundary records needed for cross-chunk comparisons;
+    - local aggregate values used later for DFSI calculation;
+    - locally detected anomaly events found fully inside the chunk.
+
+    Attributes:
+        mmsi: Vessel MMSI identifier.
+        record_count: Number of valid AIS records for this MMSI in the chunk.
+        first_record: First record for this MMSI in the chunk by timestamp.
+        last_record: Last record for this MMSI in the chunk by timestamp.
+        max_gap_hours: Maximum AIS gap detected inside this chunk for this MMSI.
+        total_impossible_jump_km: Sum of impossible jump distances for anomaly D.
+        draft_change_count: Number of anomaly C events detected in the chunk.
+        going_dark_events: Local anomaly A events detected inside the chunk.
+        draft_change_events: Local anomaly C events detected inside the chunk.
+        teleportation_events: Local anomaly D events detected inside the chunk.
+    """
+
+    mmsi: int
+    record_count: int
+    first_record: AISRecord
+    last_record: AISRecord
+    max_gap_hours: float = 0.0
+    total_impossible_jump_km: float = 0.0
+    draft_change_count: int = 0
+    going_dark_events: list[GoingDarkEvent] = field(default_factory=list)
+    draft_change_events: list[DraftChangeEvent] = field(default_factory=list)
+    teleportation_events: list[TeleportationEvent] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class ChunkProcessingResult:
+    """
+    Result returned by a worker after processing a single chunk.
+
+    Attributes:
+        chunk_id: Sequential chunk identifier.
+        row_count: Number of AIS records received by the worker for this chunk.
+        elapsed_time: Time spent processing the chunk in seconds.
+        vessel_summaries: Partial results keyed by MMSI.
+    """
+
+    chunk_id: int
+    row_count: int
+    elapsed_time: float
+    vessel_summaries: dict[int, VesselChunkSummary]

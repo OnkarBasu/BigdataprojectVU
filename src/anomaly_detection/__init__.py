@@ -1,8 +1,8 @@
 """
 Anomaly detection utilities.
 
-This package provides rule-based detection logic for AIS anomaly
-analysis used in the shadow fleet detection pipeline.
+This package provides rule-based detection and scoring logic for AIS
+anomaly analysis used in the shadow fleet detection pipeline.
 """
 
 from .rules import (
@@ -14,6 +14,8 @@ from .rules import (
     detect_teleportation,
     kilometers_to_nautical_miles,
 )
+from .merge import merge_chunk_results
+from .scoring import calculate_all_dfsi, calculate_dfsi, rank_vessels_by_dfsi
 
 __all__ = [
     "calculate_time_gap_hours",
@@ -23,4 +25,8 @@ __all__ = [
     "detect_draft_change",
     "detect_teleportation",
     "detect_all_pair_anomalies",
+    "merge_chunk_results",
+    "calculate_dfsi",
+    "calculate_all_dfsi",
+    "rank_vessels_by_dfsi",
 ]

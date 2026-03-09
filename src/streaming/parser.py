@@ -29,7 +29,18 @@ NULL_VALUES = frozenset({
     "null",
 })
 
-# Common placeholder or invalid MMSI values found in AIS datasets
+# Shadow fleet analytics in this project is focused on vessel messages only.
+# By default, keep only Class A AIS transmissions.
+VALID_MOBILE_TYPES = frozenset({
+    "Class A",       # Large commercial vessels
+    # "Class B",       # Small vessels
+    # "Base Station",  # Coastal AIS station
+    # "AtoN",          # Aid to Navigation (buoy, lighthouse)
+    # "SAR Aircraft",  # Rescue aircraft
+    # "Unknown",       # Unknown type
+})
+
+# Common placeholder or invalid MMSI values found in AIS datasets.
 INVALID_MMSI_VALUES = frozenset({
     0,
     111111111,
@@ -39,14 +50,32 @@ INVALID_MMSI_VALUES = frozenset({
 
 
 def _clean_text(value: str | None) -> str | None:
+    """
+    Strip surrounding whitespace and normalize empty strings to None.
+
+    Args:
+        value: Raw text value from a CSV cell.
+
+    Returns:
+        Cleaned string if non-empty, otherwise None.
+    """
     if value is None:
         return None
 
-    value = value.strip()
-    return value or None
+    cleaned = value.strip()
+    return cleaned or None
 
 
 def _is_null_like(value: str | None) -> bool:
+    """
+    Check whether a raw text value should be treated as null-like.
+
+    Args:
+        value: Raw text value from a CSV cell.
+
+    Returns:
+        True if the value is missing or matches a known null marker.
+    """
     cleaned = _clean_text(value)
     if cleaned is None:
         return True
@@ -55,13 +84,22 @@ def _is_null_like(value: str | None) -> bool:
 
 
 def _parse_timestamp(value: str | None) -> datetime | None:
+    """
+    Parse a timestamp using one of the supported AIS timestamp formats.
+
+    Args:
+        value: Raw timestamp string.
+
+    Returns:
+        Parsed datetime if successful, otherwise None.
+    """
     cleaned = _clean_text(value)
     if cleaned is None or cleaned.lower() in NULL_VALUES:
         return None
 
-    for fmt in TIMESTAMP_FORMATS:
+    for timestamp_format in TIMESTAMP_FORMATS:
         try:
-            return datetime.strptime(cleaned, fmt)
+            return datetime.strptime(cleaned, timestamp_format)
         except ValueError:
             continue
 
@@ -69,6 +107,18 @@ def _parse_timestamp(value: str | None) -> datetime | None:
 
 
 def _parse_int(value: str | None) -> int | None:
+    """
+    Parse an integer value from text.
+
+    Accepts strings like '123' and also float-like integer strings such as
+    '123.0'. Rejects non-integer numeric values like '123.5'.
+
+    Args:
+        value: Raw numeric string.
+
+    Returns:
+        Parsed integer if successful, otherwise None.
+    """
     cleaned = _clean_text(value)
     if cleaned is None or cleaned.lower() in NULL_VALUES:
         return None
@@ -88,6 +138,15 @@ def _parse_int(value: str | None) -> int | None:
 
 
 def _parse_float(value: str | None) -> float | None:
+    """
+    Parse a floating-point value from text.
+
+    Args:
+        value: Raw numeric string.
+
+    Returns:
+        Parsed float if successful, otherwise None.
+    """
     cleaned = _clean_text(value)
     if cleaned is None or cleaned.lower() in NULL_VALUES:
         return None
@@ -102,14 +161,25 @@ class AISRowParser:
     """
     Parse raw CSV rows into AISRecord objects.
 
-    The parser validates required fields, converts values to the appropriate
-    types, and filters out invalid or unsupported AIS messages such as
-    base stations or malformed records.
+    The parser validates required fields, converts values to typed fields,
+    and filters out rows that are irrelevant or invalid for the shadow fleet
+    detection task.
 
-    The CSV schema is assumed to match the AIS dataset format used in the
-    project (e.g. columns like "# Timestamp", "MMSI", "Latitude", etc.).
+    Project-specific policy:
+    - only vessel AIS messages of type "Class A" are accepted;
+    - malformed rows and unsupported object types are skipped.
     """
+
     def __init__(self, fieldnames: Iterable[str] | None) -> None:
+        """
+        Initialize parser and validate that all required columns exist.
+
+        Args:
+            fieldnames: Column names from csv.DictReader.
+
+        Raises:
+            ValueError: If one or more required CSV columns are missing.
+        """
         headers = set(fieldnames or ())
 
         required_columns = {
@@ -136,9 +206,35 @@ class AISRowParser:
         self.draught_key = DRAUGHT_COLUMN
 
     @staticmethod
+    def _is_valid_mobile_type(mobile_type: str | None) -> bool:
+        """
+        Check whether the mobile type is accepted for the project.
+
+        Args:
+            mobile_type: Cleaned mobile type string.
+
+        Returns:
+            True if the row belongs to an accepted AIS mobile type.
+        """
+        if mobile_type is None:
+            return False
+
+        return mobile_type in VALID_MOBILE_TYPES
+
+    @staticmethod
     def _is_valid_mmsi(mmsi: int) -> bool:
+        """
+        Validate MMSI value.
+
+        Args:
+            mmsi: Parsed MMSI number.
+
+        Returns:
+            True if MMSI looks structurally valid and is not a known placeholder.
+        """
         if not (100_000_000 <= mmsi <= 999_999_999):
             return False
+
         if mmsi in INVALID_MMSI_VALUES:
             return False
 
@@ -150,42 +246,79 @@ class AISRowParser:
 
     @staticmethod
     def _is_valid_latitude(latitude: float) -> bool:
+        """
+        Validate latitude range.
+
+        Args:
+            latitude: Parsed latitude.
+
+        Returns:
+            True if latitude is within [-90, 90].
+        """
         return -90.0 <= latitude <= 90.0
 
     @staticmethod
     def _is_valid_longitude(longitude: float) -> bool:
+        """
+        Validate longitude range.
+
+        Args:
+            longitude: Parsed longitude.
+
+        Returns:
+            True if longitude is within [-180, 180].
+        """
         return -180.0 <= longitude <= 180.0
 
     @staticmethod
     def _is_valid_sog(sog: float | None) -> bool:
+        """
+        Validate speed over ground.
+
+        Args:
+            sog: Parsed SOG value.
+
+        Returns:
+            True if SOG is missing or falls into a reasonable range.
+        """
         if sog is None:
             return True
+
         return 0.0 <= sog <= 100.0
 
     @staticmethod
     def _is_valid_draught(draught: float | None) -> bool:
+        """
+        Validate draught value.
+
+        Args:
+            draught: Parsed draught.
+
+        Returns:
+            True if draught is missing or falls into a reasonable range.
+        """
         if draught is None:
             return True
+
         return 0.0 <= draught <= 50.0
 
     def parse_row(self, row: Mapping[str, str]) -> AISRecord | None:
         """
         Parse a single CSV row into an AISRecord.
 
-        The method converts raw string values to typed fields, validates
-        coordinates, MMSI, and other constraints, and filters out rows that
-        should not be processed (e.g. base station messages or invalid data).
+        The row is skipped if:
+        - it is not a supported vessel message type;
+        - any required field is missing or malformed;
+        - coordinates, MMSI, or numeric values are outside valid ranges.
 
         Args:
-            row: A dictionary produced by csv.DictReader representing a single
-                AIS CSV row.
+            row: A dictionary-like CSV row from csv.DictReader.
 
         Returns:
-            AISRecord: Parsed AIS record if the row is valid.
-            None: If the row should be skipped due to invalid or unsupported data.
+            Parsed AISRecord if the row is valid, otherwise None.
         """
         mobile_type = _clean_text(row.get(self.mobile_type_key))
-        if mobile_type == "Base Station":
+        if not self._is_valid_mobile_type(mobile_type):
             return None
 
         timestamp = _parse_timestamp(row.get(self.timestamp_key))

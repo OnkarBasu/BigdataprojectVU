@@ -11,17 +11,39 @@ from src.utils.ports import PortZone
 
 @dataclass(slots=True)
 class BoundaryState:
+    """
+    Track the latest known record for a vessel while merging chunk results.
+
+    This state is used to detect anomalies that occur across chunk boundaries,
+    where the last record of a vessel in one chunk must be compared with the
+    first record of the same vessel in a later chunk.
+    """
+
     last_record: AISRecord
     last_chunk_id: int
 
 
 @dataclass(slots=True)
 class MergeState:
+    """
+    Incremental merge state maintained by the main process.
+
+    Attributes:
+        global_summaries: Fully merged per-vessel summaries.
+        boundary_states: Latest known boundary record for each vessel.
+    """
+
     global_summaries: dict[int, VesselGlobalSummary] = field(default_factory=dict)
     boundary_states: dict[int, BoundaryState] = field(default_factory=dict)
 
 
 def create_merge_state() -> MergeState:
+    """
+    Create an empty merge state for incremental chunk merging.
+
+    Returns:
+        Initialized merge state.
+    """
     return MergeState()
 
 
@@ -31,6 +53,13 @@ def merge_chunk_result_into_state(
     port_zones: Sequence[PortZone] | None = None,
     minimum_port_radius_km: float = 0.0,
 ) -> None:
+    """
+    Merge a single chunk result into the incremental global state.
+
+    Args:
+        merge_state: Incremental merge state maintained by the main process.
+        chunk_result: Per-chunk worker result to merge.
+    """
     for mmsi, chunk_summary in chunk_result.vessel_summaries.items():
         global_summary = merge_state.global_summaries.get(mmsi)
         if global_summary is None:
@@ -61,6 +90,21 @@ def merge_chunk_results(
     port_zones: Sequence[PortZone] | None = None,
     minimum_port_radius_km: float = 0.0,
 ) -> dict[int, VesselGlobalSummary]:
+    """
+    Merge per-chunk worker results into global per-vessel summaries.
+
+    The function:
+    - sorts chunk results by chunk_id;
+    - merges local per-vessel aggregates and events;
+    - detects anomalies across chunk boundaries using the last record from
+      the previous chunk and the first record from the current chunk.
+
+    Args:
+        chunk_results: Worker results from processed chunks.
+
+    Returns:
+        Dictionary mapping MMSI to fully merged vessel summaries.
+    """
     merge_state = create_merge_state()
 
     for chunk_result in sorted(chunk_results, key=lambda result: result.chunk_id):
@@ -78,6 +122,13 @@ def _merge_local_chunk_summary(
     global_summary: VesselGlobalSummary,
     chunk_summary: VesselChunkSummary,
 ) -> None:
+    """
+    Merge local worker results for one vessel into the global summary.
+
+    Args:
+        global_summary: Accumulated global vessel summary.
+        chunk_summary: Per-chunk vessel summary produced by a worker.
+    """
     global_summary.record_count += chunk_summary.record_count
     global_summary.max_gap_hours = max(
         global_summary.max_gap_hours,
@@ -99,6 +150,15 @@ def _merge_boundary_anomalies(
     port_zones: Sequence[PortZone] | None = None,
     minimum_port_radius_km: float = 0.0,
 ) -> None:
+    """
+    Detect and merge anomalies spanning across chunk boundaries.
+
+    Args:
+        global_summary: Accumulated global vessel summary.
+        boundary_state: Previously seen boundary state for the same vessel.
+        current_chunk_id: ID of the current chunk being merged.
+        current_summary: Current chunk summary for the vessel.
+    """
     if boundary_state is None:
         return
 

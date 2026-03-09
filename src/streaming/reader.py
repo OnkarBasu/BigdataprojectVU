@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Generator
 
 from src.models import AISRecord
-from src.streaming.parser import AISRowParser
+from src.streaming import AISRowParser
 
 
 Chunk = tuple[int, list[AISRecord]]

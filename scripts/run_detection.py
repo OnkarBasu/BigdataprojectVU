@@ -30,7 +30,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--chunk-size",
         type=int,
-        default=100_000,
+        default=50_000,
         help="Number of valid AIS records per chunk.",
     )
     parser.add_argument(

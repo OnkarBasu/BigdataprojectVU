@@ -9,7 +9,12 @@ from pathlib import Path
 from src.anomaly_detection import calculate_all_dfsi, merge_chunk_results
 from src.parallel import process_chunk
 from src.streaming import stream_csv_files_in_chunks
-from src.performance import collect_memory_sample, get_current_process, get_rss_mb
+from src.performance import (
+    collect_memory_sample,
+    get_current_process,
+    get_rss_mb,
+    MemorySample
+)
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -57,6 +62,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("data/output/dfsi_results.csv"),
         help="Path to output CSV file.",
+    )
+    parser.add_argument(
+        "--memory-output",
+        type=Path,
+        default=Path("data/output/memory_profile.csv"),
+        help="Path to output memory profile CSV file.",
     )
     return parser
 
@@ -106,6 +117,46 @@ def write_results_csv(
             )
 
 
+def write_memory_samples_csv(
+    output_file: Path,
+    memory_samples: list[MemorySample],
+) -> None:
+    """
+    Write collected memory usage samples to a CSV file.
+
+    Args:
+        output_file: Path to the output CSV file.
+        memory_samples: Collected memory samples during pipeline execution.
+    """
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    with output_file.open("w", newline="", encoding="utf-8") as csvfile:
+        writer = csv.writer(csvfile)
+
+        writer.writerow(
+            [
+                "elapsed_time_sec",
+                "completed_chunks",
+                "processed_valid_records",
+                "main_rss_mb",
+                "workers_rss_mb",
+                "total_rss_mb",
+            ]
+        )
+
+        for sample in memory_samples:
+            writer.writerow(
+                [
+                    f"{sample.elapsed_time_sec:.6f}",
+                    sample.completed_chunks,
+                    sample.processed_valid_records,
+                    f"{sample.main_rss_mb:.3f}",
+                    f"{sample.workers_rss_mb:.3f}",
+                    f"{sample.total_rss_mb:.3f}",
+                ]
+            )
+
+
 def main() -> None:
     """
     Run the full anomaly-detection pipeline on one or more AIS CSV files.
@@ -115,6 +166,7 @@ def main() -> None:
 
     input_files: list[Path] = args.input_files
     output_file: Path = args.output
+    memory_output_file: Path = args.memory_output
     chunk_size: int = args.chunk_size
     workers: int = args.workers
     encoding: str = args.encoding
@@ -190,11 +242,16 @@ def main() -> None:
 
     total_time = time.perf_counter() - start_time
 
+    peak_main_rss_mb = max((sample.main_rss_mb for sample in memory_samples), default=0.0)
+    peak_workers_rss_mb = max((sample.workers_rss_mb for sample in memory_samples), default=0.0)
+    peak_total_rss_mb = max((sample.total_rss_mb for sample in memory_samples), default=0.0)
     final_memory_rss_mb = get_rss_mb(process)
 
     # write_results_csv(output_file, ranked_scores, global_summaries)
-
     print(f"\nResults written to: {output_file}")
+
+    write_memory_samples_csv(memory_output_file, memory_samples)
+    print(f"Memory profile written to: {memory_output_file}")
 
     print("\n" + "=" * 80)
     print("RESULT SUMMARY")
@@ -203,6 +260,9 @@ def main() -> None:
     print(f"Processed valid records: {processed_valid_records}")
     print(f"Completed chunks:        {completed_chunks}")
     print(f"Total runtime:           {total_time:.2f} sec")
+    print(f"Peak main RSS:          {peak_main_rss_mb:.2f} MB")
+    print(f"Peak workers RSS:       {peak_workers_rss_mb:.2f} MB")
+    print(f"Peak total RSS:         {peak_total_rss_mb:.2f} MB")
     print(f"Final memory RSS:       {final_memory_rss_mb:.2f} MB")
     print("=" * 80)
 

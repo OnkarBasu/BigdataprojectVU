@@ -247,7 +247,7 @@ def main() -> None:
     peak_total_rss_mb = max((sample.total_rss_mb for sample in memory_samples), default=0.0)
     final_memory_rss_mb = get_rss_mb(process)
 
-    # write_results_csv(output_file, ranked_scores, global_summaries)
+    write_results_csv(output_file, ranked_scores, global_summaries)
     print(f"\nResults written to: {output_file}")
 
     write_memory_samples_csv(memory_output_file, memory_samples)

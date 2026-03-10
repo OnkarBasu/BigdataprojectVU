@@ -49,13 +49,15 @@ class ChunkProcessingResult:
 
     Attributes:
         chunk_id: Sequential chunk identifier.
-        row_count: Number of AIS records received by the worker for this chunk.
+        raw_row_count: Number of raw CSV rows received by the worker.
+        valid_record_count: Number of rows successfully parsed into AIS records.
         elapsed_time: Time spent processing the chunk in seconds.
-        vessel_summaries: Partial results keyed by MMSI.
+        vessel_summaries: Partial per-vessel results keyed by MMSI.
     """
 
     chunk_id: int
-    row_count: int
+    raw_row_count: int
+    valid_record_count: int
     elapsed_time: float
     vessel_summaries: dict[int, VesselChunkSummary]
 

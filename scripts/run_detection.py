@@ -11,7 +11,7 @@ from src.anomaly_detection import (
     create_merge_state,
     merge_chunk_result_into_state,
 )
-from src.parallel import process_chunk
+from src.parallel import process_chunk, worker_init
 from src.performance import (
     MemorySample,
     collect_memory_sample,
@@ -19,16 +19,8 @@ from src.performance import (
     get_rss_mb,
 )
 from src.streaming import stream_csv_files_in_chunks
+from src.models import ChunkProcessingResult
 from src.utils import load_port_zones
-
-
-def worker_init() -> None:
-    """
-    Initialize a worker process and print its PID once at startup.
-    """
-    import os
-
-    print(f"Worker started: PID={os.getpid()}")
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -51,7 +43,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--chunk-size",
         type=int,
         default=100_000,
-        help="Number of valid AIS records per chunk.",
+        help="Number of raw AIS rows per chunk.",
     )
     parser.add_argument(
         "--workers",
@@ -176,6 +168,77 @@ def write_memory_samples_csv(
             )
 
 
+def merge_ready_results(
+    pending_results: dict[int, ChunkProcessingResult],
+    next_chunk_id_to_merge: int,
+    merge_state,
+    port_zones,
+    processed_valid_records: int,
+    completed_chunks: int,
+    memory_samples: list[MemorySample],
+    start_time: float,
+    process,
+) -> tuple[int, int, int]:
+    """
+    Merge all consecutively available chunk results in strict chunk order.
+
+    Even if worker results arrive out of order, global merging must stay
+    ordered because cross-chunk anomaly detection depends on chunk sequence.
+
+    Args:
+        pending_results: Buffer of completed worker results keyed by chunk ID.
+        next_chunk_id_to_merge: Next chunk ID expected by the ordered reducer.
+        merge_state: Global incremental merge state.
+        port_zones: Loaded port zones used for boundary anomaly checks.
+        processed_valid_records: Accumulated count of valid records merged so far.
+        completed_chunks: Number of merged chunks so far.
+        memory_samples: Output list for collected memory samples.
+        start_time: Pipeline start time.
+        process: Current main process handle.
+
+    Returns:
+        Tuple of updated:
+            - next_chunk_id_to_merge
+            - processed_valid_records
+            - completed_chunks
+    """
+    while next_chunk_id_to_merge in pending_results:
+        chunk_result = pending_results.pop(next_chunk_id_to_merge)
+
+        merge_chunk_result_into_state(
+            merge_state=merge_state,
+            chunk_result=chunk_result,
+            port_zones=port_zones,
+        )
+
+        processed_valid_records += chunk_result.valid_record_count
+        completed_chunks += 1
+
+        sample = collect_memory_sample(
+            start_time=start_time,
+            completed_chunks=completed_chunks,
+            processed_valid_records=processed_valid_records,
+            process=process,
+        )
+        memory_samples.append(sample)
+
+        print(
+            f"Chunk {chunk_result.chunk_id} processed in "
+            f"{chunk_result.elapsed_time:.4f} sec | "
+            f"Raw rows in chunk: {chunk_result.raw_row_count} | "
+            f"Valid records in chunk: {chunk_result.valid_record_count} | "
+            f"Processed valid records: {processed_valid_records} | "
+            f"Completed chunks: {completed_chunks} | "
+            f"Main RSS: {sample.main_rss_mb:.2f} MB | "
+            f"Workers RSS: {sample.workers_rss_mb:.2f} MB | "
+            f"Total RSS: {sample.total_rss_mb:.2f} MB"
+        )
+
+        next_chunk_id_to_merge += 1
+
+    return next_chunk_id_to_merge, processed_valid_records, completed_chunks
+
+
 def main() -> None:
     """
     Run the full anomaly-detection pipeline on one or more AIS CSV files.
@@ -226,35 +289,48 @@ def main() -> None:
         encoding=encoding,
     )
 
+    pending_results: dict[int, ChunkProcessingResult] = {}
+    next_chunk_id_to_merge = 1
+
     with Pool(processes=workers, initializer=worker_init) as pool:
-        for chunk_result in pool.imap(process_chunk, tasks, chunksize=1):
-            merge_chunk_result_into_state(
+        for chunk_result in pool.imap_unordered(process_chunk, tasks, chunksize=1):
+            pending_results[chunk_result.chunk_id] = chunk_result
+
+            (
+                next_chunk_id_to_merge,
+                processed_valid_records,
+                completed_chunks,
+            ) = merge_ready_results(
+                pending_results=pending_results,
+                next_chunk_id_to_merge=next_chunk_id_to_merge,
                 merge_state=merge_state,
-                chunk_result=chunk_result,
                 port_zones=port_zones,
-            )
-
-            processed_valid_records += chunk_result.row_count
-            completed_chunks += 1
-
-            sample = collect_memory_sample(
-                start_time=start_time,
-                completed_chunks=completed_chunks,
                 processed_valid_records=processed_valid_records,
+                completed_chunks=completed_chunks,
+                memory_samples=memory_samples,
+                start_time=start_time,
                 process=process,
             )
-            memory_samples.append(sample)
 
-            print(
-                f"Chunk {chunk_result.chunk_id} processed in "
-                f"{chunk_result.elapsed_time:.4f} sec | "
-                f"Valid records in chunk: {chunk_result.row_count} | "
-                f"Processed valid records: {processed_valid_records} | "
-                f"Completed chunks: {completed_chunks} | "
-                f"Main RSS: {sample.main_rss_mb:.2f} MB | "
-                f"Workers RSS: {sample.workers_rss_mb:.2f} MB | "
-                f"Total RSS: {sample.total_rss_mb:.2f} MB"
-            )
+    (
+        next_chunk_id_to_merge,
+        processed_valid_records,
+        completed_chunks,
+    ) = merge_ready_results(
+        pending_results=pending_results,
+        next_chunk_id_to_merge=next_chunk_id_to_merge,
+        merge_state=merge_state,
+        port_zones=port_zones,
+        processed_valid_records=processed_valid_records,
+        completed_chunks=completed_chunks,
+        memory_samples=memory_samples,
+        start_time=start_time,
+        process=process,
+    )
+
+    if pending_results:
+        missing = sorted(pending_results)
+        raise RuntimeError(f"Unexpected pending results after pool completion: {missing}")
 
     global_summaries = merge_state.global_summaries
     dfsi_scores = calculate_all_dfsi(global_summaries)

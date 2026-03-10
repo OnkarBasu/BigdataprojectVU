@@ -2,6 +2,5 @@ from __future__ import annotations
 
 from typing import TypeAlias
 
-from src.models import AISRecord
-
-Chunk: TypeAlias = tuple[int, list[AISRecord]]
+RawRow: TypeAlias = tuple[str, str, str, str, str, str, str]
+Chunk: TypeAlias = tuple[int, list[RawRow]]

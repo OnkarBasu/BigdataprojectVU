@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterable, Mapping
+from typing import Iterable
 
 from src.models import AISRecord
+from src.streaming.types import RawRow
 
 
 TIMESTAMP_COLUMN = "# Timestamp"
@@ -40,13 +42,126 @@ VALID_MOBILE_TYPES = frozenset({
     # "Unknown",       # Unknown type
 })
 
-# Common placeholder or invalid MMSI values found in AIS datasets.
 INVALID_MMSI_VALUES = frozenset({
     0,
     111111111,
     123456789,
     999999999,
 })
+
+RAW_ROW_FIELD_COUNT = 7
+
+TIMESTAMP_INDEX = 0
+MOBILE_TYPE_INDEX = 1
+MMSI_INDEX = 2
+LATITUDE_INDEX = 3
+LONGITUDE_INDEX = 4
+SOG_INDEX = 5
+DRAUGHT_INDEX = 6
+
+
+@dataclass(frozen=True, slots=True)
+class RawRowColumnIndices:
+    """
+    Positional indices of required AIS CSV columns.
+
+    The main process uses this structure to extract only the required string
+    fields from each CSV row before sending compact raw rows to workers.
+    """
+
+    timestamp: int
+    mobile_type: int
+    mmsi: int
+    latitude: int
+    longitude: int
+    sog: int
+    draught: int
+
+
+def build_raw_row_column_indices(fieldnames: Iterable[str] | None) -> RawRowColumnIndices:
+    """
+    Build positional indices for all required AIS CSV columns.
+
+    Args:
+        fieldnames: Header row from ``csv.reader``.
+
+    Returns:
+        RawRowColumnIndices with positions of required columns.
+
+    Raises:
+        ValueError: If one or more required columns are missing.
+    """
+    headers = list(fieldnames or ())
+    header_to_index = {header: index for index, header in enumerate(headers)}
+
+    required_columns = {
+        TIMESTAMP_COLUMN,
+        MOBILE_TYPE_COLUMN,
+        MMSI_COLUMN,
+        LATITUDE_COLUMN,
+        LONGITUDE_COLUMN,
+        SOG_COLUMN,
+        DRAUGHT_COLUMN,
+    }
+
+    missing_columns = required_columns - set(header_to_index)
+    if missing_columns:
+        missing = ", ".join(sorted(missing_columns))
+        raise ValueError(f"Missing required CSV columns: {missing}")
+
+    return RawRowColumnIndices(
+        timestamp=header_to_index[TIMESTAMP_COLUMN],
+        mobile_type=header_to_index[MOBILE_TYPE_COLUMN],
+        mmsi=header_to_index[MMSI_COLUMN],
+        latitude=header_to_index[LATITUDE_COLUMN],
+        longitude=header_to_index[LONGITUDE_COLUMN],
+        sog=header_to_index[SOG_COLUMN],
+        draught=header_to_index[DRAUGHT_COLUMN],
+    )
+
+
+def extract_raw_row(
+    row: list[str],
+    indices: RawRowColumnIndices,
+) -> RawRow:
+    """
+    Extract the required AIS fields from a CSV row as a compact raw tuple.
+
+    Missing trailing columns are normalized to empty strings.
+
+    Args:
+        row: Raw CSV row returned by ``csv.reader``.
+        indices: Required column positions.
+
+    Returns:
+        RawRow tuple with the project-required AIS fields.
+    """
+    return (
+        _get_cell(row, indices.timestamp),
+        _get_cell(row, indices.mobile_type),
+        _get_cell(row, indices.mmsi),
+        _get_cell(row, indices.latitude),
+        _get_cell(row, indices.longitude),
+        _get_cell(row, indices.sog),
+        _get_cell(row, indices.draught),
+    )
+
+
+def _get_cell(row: list[str], index: int) -> str:
+    """
+    Safely return a CSV cell by index.
+
+    Args:
+        row: Raw CSV row.
+        index: Cell position.
+
+    Returns:
+        Cell value if present, otherwise an empty string.
+    """
+    if 0 <= index < len(row):
+        return row[index]
+
+    return ""
 
 
 def _clean_text(value: str | None) -> str | None:
@@ -159,7 +274,7 @@ def _parse_float(value: str | None) -> float | None:
 
 class AISRowParser:
     """
-    Parse raw CSV rows into AISRecord objects.
+    Parse compact raw AIS rows into ``AISRecord`` objects.
 
     The parser validates required fields, converts values to typed fields,
     and filters out rows that are irrelevant or invalid for the shadow fleet
@@ -169,41 +284,6 @@ class AISRowParser:
     - only vessel AIS messages of type "Class A" are accepted;
     - malformed rows and unsupported object types are skipped.
     """
-
-    def __init__(self, fieldnames: Iterable[str] | None) -> None:
-        """
-        Initialize parser and validate that all required columns exist.
-
-        Args:
-            fieldnames: Column names from csv.DictReader.
-
-        Raises:
-            ValueError: If one or more required CSV columns are missing.
-        """
-        headers = set(fieldnames or ())
-
-        required_columns = {
-            TIMESTAMP_COLUMN,
-            MOBILE_TYPE_COLUMN,
-            MMSI_COLUMN,
-            LATITUDE_COLUMN,
-            LONGITUDE_COLUMN,
-            SOG_COLUMN,
-            DRAUGHT_COLUMN,
-        }
-
-        missing_columns = required_columns - headers
-        if missing_columns:
-            missing = ", ".join(sorted(missing_columns))
-            raise ValueError(f"Missing required CSV columns: {missing}")
-
-        self.timestamp_key = TIMESTAMP_COLUMN
-        self.mobile_type_key = MOBILE_TYPE_COLUMN
-        self.mmsi_key = MMSI_COLUMN
-        self.latitude_key = LATITUDE_COLUMN
-        self.longitude_key = LONGITUDE_COLUMN
-        self.sog_key = SOG_COLUMN
-        self.draught_key = DRAUGHT_COLUMN
 
     @staticmethod
     def _is_valid_mobile_type(mobile_type: str | None) -> bool:
@@ -270,81 +350,42 @@ class AISRowParser:
         """
         return -180.0 <= longitude <= 180.0
 
-    @staticmethod
-    def _is_valid_sog(sog: float | None) -> bool:
+    def parse_row(self, row: RawRow) -> AISRecord | None:
         """
-        Validate speed over ground.
+        Parse a compact raw AIS row into an ``AISRecord``.
 
         Args:
-            sog: Parsed SOG value.
+            row: Raw AIS row containing only required fields in fixed order.
 
         Returns:
-            True if SOG is missing or falls into a reasonable range.
+            Parsed ``AISRecord`` if the row is valid for the project,
+            otherwise None.
         """
-        if sog is None:
-            return True
+        if len(row) != RAW_ROW_FIELD_COUNT:
+            return None
 
-        return 0.0 <= sog <= 100.0
-
-    @staticmethod
-    def _is_valid_draught(draught: float | None) -> bool:
-        """
-        Validate draught value.
-
-        Args:
-            draught: Parsed draught.
-
-        Returns:
-            True if draught is missing or falls into a reasonable range.
-        """
-        if draught is None:
-            return True
-
-        return 0.0 <= draught <= 50.0
-
-    def parse_row(self, row: Mapping[str, str]) -> AISRecord | None:
-        """
-        Parse a single CSV row into an AISRecord.
-
-        The row is skipped if:
-        - it is not a supported vessel message type;
-        - any required field is missing or malformed;
-        - coordinates, MMSI, or numeric values are outside valid ranges.
-
-        Args:
-            row: A dictionary-like CSV row from csv.DictReader.
-
-        Returns:
-            Parsed AISRecord if the row is valid, otherwise None.
-        """
-        mobile_type = _clean_text(row.get(self.mobile_type_key))
+        mobile_type = _clean_text(row[MOBILE_TYPE_INDEX])
         if not self._is_valid_mobile_type(mobile_type):
             return None
 
-        timestamp = _parse_timestamp(row.get(self.timestamp_key))
-        mmsi = _parse_int(row.get(self.mmsi_key))
-        latitude = _parse_float(row.get(self.latitude_key))
-        longitude = _parse_float(row.get(self.longitude_key))
-        sog = _parse_float(row.get(self.sog_key))
-        draught = _parse_float(row.get(self.draught_key))
-
-        if timestamp is None or mmsi is None or latitude is None or longitude is None:
+        timestamp = _parse_timestamp(row[TIMESTAMP_INDEX])
+        if timestamp is None:
             return None
 
-        if not self._is_valid_mmsi(mmsi):
+        mmsi = _parse_int(row[MMSI_INDEX])
+        if mmsi is None or not self._is_valid_mmsi(mmsi):
             return None
 
-        if not self._is_valid_latitude(latitude):
+        latitude = _parse_float(row[LATITUDE_INDEX])
+        if latitude is None or not self._is_valid_latitude(latitude):
             return None
 
-        if not self._is_valid_longitude(longitude):
+        longitude = _parse_float(row[LONGITUDE_INDEX])
+        if longitude is None or not self._is_valid_longitude(longitude):
             return None
 
-        if not self._is_valid_sog(sog):
-            return None
-
-        if not self._is_valid_draught(draught):
-            return None
+        sog = _parse_float(row[SOG_INDEX])
+        draught = None if _is_null_like(row[DRAUGHT_INDEX]) else _parse_float(row[DRAUGHT_INDEX])
 
         return AISRecord(
             timestamp=timestamp,

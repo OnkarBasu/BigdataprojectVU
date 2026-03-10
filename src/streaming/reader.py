@@ -4,64 +4,66 @@ import csv
 from pathlib import Path
 from typing import Generator, Iterable
 
-from src.models import AISRecord
-from .parser import AISRowParser
-from .types import Chunk
+from .parser import build_raw_row_column_indices, extract_raw_row
+from .types import Chunk, RawRow
 
 
-def stream_records(
+def stream_raw_rows(
     file_path: str | Path,
     encoding: str = "utf-8",
-) -> Generator[AISRecord, None, None]:
+) -> Generator[RawRow, None, None]:
     """
-    Stream valid AIS records from a CSV file.
+    Stream compact raw AIS rows from a CSV file.
 
-    This function reads the CSV file row by row using ``csv.DictReader``,
-    parses each row into an ``AISRecord`` using ``AISRowParser``, and yields
-    only valid records.
+    The main process performs only light work here:
+    - sequential file I/O;
+    - header parsing;
+    - extraction of required columns as raw strings.
 
-    Invalid or filtered rows (e.g., base stations, malformed data, or rows
-    failing validation) are skipped.
+    All CPU-heavy parsing, validation, and ``AISRecord`` construction is
+    intentionally deferred to worker processes.
 
     Args:
         file_path: Path to the CSV file containing AIS data.
         encoding: File encoding used when opening the CSV file.
 
     Yields:
-        AISRecord: Parsed and validated AIS records.
+        RawRow tuples containing only required AIS fields.
     """
     path = Path(file_path)
 
     with path.open("r", encoding=encoding, errors="replace", newline="") as file:
-        reader = csv.DictReader(file)
-        parser = AISRowParser(reader.fieldnames)
+        reader = csv.reader(file)
+
+        header = next(reader, None)
+        if header is None:
+            return
+
+        indices = build_raw_row_column_indices(header)
 
         for row in reader:
-            record = parser.parse_row(row)
-            if record is not None:
-                yield record
+            yield extract_raw_row(row, indices)
 
 
-def stream_records_from_files(
+def stream_raw_rows_from_files(
     file_paths: Iterable[str | Path],
     encoding: str = "utf-8",
-) -> Generator[AISRecord, None, None]:
+) -> Generator[RawRow, None, None]:
     """
-    Stream valid AIS records sequentially from multiple CSV files.
+    Stream compact raw AIS rows sequentially from multiple CSV files.
 
-    Files are processed in the order they are provided. This makes it possible
-    to treat several daily AIS files as one continuous input stream for
-    downstream chunking and anomaly detection.
+    Files are processed in the order they are provided, allowing downstream
+    processing to treat several files as one continuous AIS stream.
 
     Args:
-        file_paths: Iterable of paths to AIS CSV files.
+        file_paths: Iterable of AIS CSV file paths.
         encoding: File encoding used when opening each file.
 
     Yields:
-        AISRecord: Parsed and validated AIS records from all input files.
+        RawRow tuples from all input files.
     """
     for file_path in file_paths:
-        yield from stream_records(file_path=file_path, encoding=encoding)
+        yield from stream_raw_rows(file_path=file_path, encoding=encoding)
 
 
 def stream_csv_in_chunks(
@@ -70,27 +72,15 @@ def stream_csv_in_chunks(
     encoding: str = "utf-8",
 ) -> Generator[Chunk, None, None]:
     """
-    Stream AIS records from a single CSV file in fixed-size chunks.
-
-    This function uses ``stream_records`` to read AIS records and groups them
-    into chunks of a specified size. Each chunk is assigned a sequential
-    identifier starting from 1.
-
-    Chunks are useful for parallel processing pipelines where each worker
-    processes a batch of AIS records.
+    Stream compact raw AIS rows from a single CSV file in fixed-size chunks.
 
     Args:
         file_path: Path to the CSV file containing AIS data.
-        chunk_size: Number of AIS records per chunk.
+        chunk_size: Number of raw AIS rows per chunk.
         encoding: File encoding used when opening the CSV file.
 
     Yields:
-        Chunk: A tuple containing:
-            - chunk_id (int): Sequential chunk identifier.
-            - records (list[AISRecord]): List of AIS records in the chunk.
-
-    Raises:
-        ValueError: If ``chunk_size`` is less than or equal to zero.
+        Chunk tuples containing ``(chunk_id, raw_rows)``.
     """
     yield from stream_csv_files_in_chunks(
         file_paths=[file_path],
@@ -105,21 +95,18 @@ def stream_csv_files_in_chunks(
     encoding: str = "utf-8",
 ) -> Generator[Chunk, None, None]:
     """
-    Stream AIS records from multiple CSV files in fixed-size chunks.
+    Stream compact raw AIS rows from multiple files in fixed-size chunks.
 
-    Files are processed sequentially in the order they are provided, and
-    chunk IDs continue across file boundaries. This allows the downstream
-    pipeline to treat multiple daily AIS files as one continuous stream.
+    Files are processed sequentially, and chunk IDs continue across file
+    boundaries so the downstream pipeline can merge results in global order.
 
     Args:
-        file_paths: Iterable of paths to AIS CSV files.
-        chunk_size: Number of AIS records per chunk.
+        file_paths: Iterable of AIS CSV file paths.
+        chunk_size: Number of raw AIS rows per chunk.
         encoding: File encoding used when opening each file.
 
     Yields:
-        Chunk: A tuple containing:
-            - chunk_id (int): Sequential chunk identifier.
-            - records (list[AISRecord]): List of AIS records in the chunk.
+        Chunk tuples containing ``(chunk_id, raw_rows)``.
 
     Raises:
         ValueError: If ``chunk_size`` is less than or equal to zero.
@@ -127,11 +114,11 @@ def stream_csv_files_in_chunks(
     if chunk_size <= 0:
         raise ValueError("chunk_size must be greater than 0")
 
-    chunk: list[AISRecord] = []
+    chunk: list[RawRow] = []
     chunk_id = 0
 
-    for record in stream_records_from_files(file_paths=file_paths, encoding=encoding):
-        chunk.append(record)
+    for raw_row in stream_raw_rows_from_files(file_paths=file_paths, encoding=encoding):
+        chunk.append(raw_row)
 
         if len(chunk) >= chunk_size:
             chunk_id += 1

@@ -160,24 +160,9 @@ def collect_stats_old_branch(
 ) -> dict:
     """
     Collect parser stats using the old branch interface based on DictReader.
-
-    Expected old interface:
-        from src.streaming.parser import AISRowParser
-        parser = AISRowParser()
-        parser.parse_row(row_dict)
-
-    Args:
-        file_path: CSV path.
-        encoding: File encoding.
-        limit: Max number of rows to inspect, 0 for all.
-        sample_invalid: Number of invalid examples to save.
-
-    Returns:
-        Stats dictionary.
     """
-    from src.streaming.parser import AISRowParser
 
-    parser = AISRowParser()
+    from src.streaming.parser import AISRowParser
 
     raw_rows = 0
     valid_rows = 0
@@ -188,28 +173,43 @@ def collect_stats_old_branch(
 
     invalid_examples: list[dict] = []
 
-    for row in iter_dict_rows(file_path, encoding):
-        raw_rows += 1
-        if limit and raw_rows > limit:
-            break
+    with file_path.open("r", encoding=encoding, errors="replace", newline="") as file:
 
-        record = parser.parse_row(row)
+        reader = csv.DictReader(file)
 
-        if record is None:
-            invalid_rows += 1
-            if len(invalid_examples) < sample_invalid:
-                invalid_examples.append(
-                    {
-                        "row_number": raw_rows,
-                        "row": {key: row.get(key, "") for key in REQUIRED_COLUMNS},
-                    }
-                )
-            continue
+        # old parser requires fieldnames
+        parser = AISRowParser(reader.fieldnames)
 
-        valid_rows += 1
-        signature = row_signature_from_record(record)
-        update_digest(valid_digest, signature)
-        update_digest(valid_mmsi_digest, f"{record.mmsi}|{record.timestamp.isoformat(sep=' ')}")
+        for row in reader:
+
+            raw_rows += 1
+            if limit and raw_rows > limit:
+                break
+
+            record = parser.parse_row(row)
+
+            if record is None:
+                invalid_rows += 1
+
+                if len(invalid_examples) < sample_invalid:
+                    invalid_examples.append(
+                        {
+                            "row_number": raw_rows,
+                            "row": {key: row.get(key, "") for key in REQUIRED_COLUMNS},
+                        }
+                    )
+
+                continue
+
+            valid_rows += 1
+
+            signature = row_signature_from_record(record)
+
+            update_digest(valid_digest, signature)
+            update_digest(
+                valid_mmsi_digest,
+                f"{record.mmsi}|{record.timestamp.isoformat(sep=' ')}",
+            )
 
     return {
         "mode": "old_branch_dict_reader",

@@ -9,6 +9,7 @@ from pathlib import Path
 from src.anomaly_detection import (
     calculate_all_dfsi,
     create_merge_state,
+    get_top_teleportation_vessel_visualization_data,
     merge_chunk_result_into_state,
 )
 from src.parallel import process_chunk, worker_init
@@ -74,6 +75,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("data/output/memory_profile.csv"),
         help="Path to output memory profile CSV file.",
+    )
+    parser.add_argument(
+        "--teleportation-viz-output",
+        type=Path,
+        default=Path("data/output/top_teleportation_vessel_map.csv"),
+        help="Path to output CSV of top Anomaly D vessel coordinates for map visualization.",
     )
     return parser
 
@@ -168,6 +175,54 @@ def write_memory_samples_csv(
             )
 
 
+def write_teleportation_visualization_csv(
+    output_file: Path,
+    mmsi: int,
+    rows: list[dict[str, int | float]],
+) -> None:
+    """
+    Write the top Anomaly D vessel's teleportation coordinates for map visualization.
+
+    Each row represents one impossible jump (origin -> destination) for the
+    vessel with the highest number of teleportation events.
+
+    Args:
+        output_file: Path to the output CSV file.
+        mmsi: Vessel MMSI identifier.
+        rows: List of dicts with lat_origin, lon_origin, lat_destination,
+            lon_destination, event_index, implied_speed_knots, distance_km.
+    """
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    columns = [
+        "mmsi",
+        "event_index",
+        "lat_origin",
+        "lon_origin",
+        "lat_destination",
+        "lon_destination",
+        "implied_speed_knots",
+        "distance_km",
+    ]
+
+    with output_file.open("w", newline="", encoding="utf-8") as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(columns)
+        for row in rows:
+            writer.writerow(
+                [
+                    row["mmsi"],
+                    row["event_index"],
+                    f"{row['lat_origin']:.6f}",
+                    f"{row['lon_origin']:.6f}",
+                    f"{row['lat_destination']:.6f}",
+                    f"{row['lon_destination']:.6f}",
+                    f"{row['implied_speed_knots']:.3f}",
+                    f"{row['distance_km']:.3f}",
+                ]
+            )
+
+
 def merge_ready_results(
     pending_results: dict[int, ChunkProcessingResult],
     next_chunk_id_to_merge: int,
@@ -253,6 +308,7 @@ def main() -> None:
     top_n: int = args.top
     output_file: Path = args.output
     memory_output_file: Path = args.memory_output
+    teleportation_viz_output: Path = args.teleportation_viz_output
 
     if chunk_size <= 0:
         raise ValueError("chunk_size must be greater than 0")
@@ -346,6 +402,21 @@ def main() -> None:
 
     write_memory_samples_csv(memory_output_file, memory_samples)
     print(f"Memory profile written to: {memory_output_file}")
+
+    viz_data = get_top_teleportation_vessel_visualization_data(global_summaries)
+    if viz_data is not None:
+        top_mmsi, viz_rows = viz_data
+        write_teleportation_visualization_csv(
+            teleportation_viz_output, top_mmsi, viz_rows
+        )
+        print(
+            f"Top Anomaly D vessel (MMSI={top_mmsi}) map data written to: "
+            f"{teleportation_viz_output}"
+        )
+    else:
+        print(
+            "No teleportation events detected; skipping top vessel map output."
+        )
 
     total_time = time.perf_counter() - start_time
     final_memory_rss_mb = get_rss_mb(process)

@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from src.models import AISRecord, DraftChangeEvent, GoingDarkEvent, TeleportationEvent
+from src.models import (
+    AISRecord,
+    DraftChangeEvent,
+    GoingDarkEvent,
+    TeleportationEvent,
+    VesselGlobalSummary,
+)
 from src.utils.geo import calculate_distance
 from src.utils.ports import PortZone, is_blackout_at_sea
 
@@ -292,6 +298,66 @@ def detect_all_pair_anomalies(
     )
 
     return going_dark_event, draft_change_event, teleportation_event
+
+
+def get_top_teleportation_vessel_visualization_data(
+    global_summaries: dict[int, VesselGlobalSummary],
+) -> tuple[int, list[dict[str, int | float]]] | None:
+    """
+    Find the MMSI with the most Anomaly D (teleportation) events and extract
+    coordinate pairs for map visualization.
+
+    Each teleportation event represents an impossible jump: the same MMSI
+    pings from two locations requiring travel speed > 60 knots, suggesting
+    identity cloning. The output provides origin/destination lat/lon for
+    each such jump.
+
+    Args:
+        global_summaries: Merged vessel summaries keyed by MMSI.
+
+    Returns:
+        None if no vessel has any teleportation events. Otherwise a tuple of:
+        - mmsi: The vessel with the highest teleportation event count.
+        - rows: List of dicts, each with mmsi, event_index, lat_origin,
+          lon_origin, lat_destination, lon_destination (plus implied_speed_knots
+          and distance_km for map tooltips).
+    """
+    if not global_summaries:
+        return None
+
+    best_mmsi: int | None = None
+    best_count = 0
+
+    for mmsi, summary in global_summaries.items():
+        count = len(summary.teleportation_events)
+        if count > best_count:
+            best_count = count
+            best_mmsi = mmsi
+        elif count == best_count and count > 0 and best_mmsi is not None:
+            if mmsi < best_mmsi:
+                best_mmsi = mmsi
+
+    if best_mmsi is None or best_count == 0:
+        return None
+
+    summary = global_summaries[best_mmsi]
+    rows: list[dict[str, int | float]] = []
+
+    for event_index, event in enumerate(summary.teleportation_events, start=1):
+        rows.append(
+            {
+                "mmsi": event.mmsi,
+                "event_index": event_index,
+                "lat_origin": event.start_latitude,
+                "lon_origin": event.start_longitude,
+                "lat_destination": event.end_latitude,
+                "lon_destination": event.end_longitude,
+                "implied_speed_knots": event.implied_speed_knots,
+                "distance_km": event.distance_km,
+            }
+        )
+
+    return best_mmsi, rows
 
 
 def _validate_same_mmsi(previous: AISRecord, current: AISRecord) -> None:

@@ -1,0 +1,6 @@
+# Core (used by run_detection, etc.)
+psutil>=5.9.0
+
+# Visualization (result_plots.py)
+pandas>=1.5.0
+folium>=0.14.0

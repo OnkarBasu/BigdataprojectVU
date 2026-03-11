@@ -215,7 +215,8 @@ def _parse_timestamp(value: str | None) -> datetime | None:
     for timestamp_format in TIMESTAMP_FORMATS:
         try:
             return datetime.strptime(cleaned, timestamp_format)
-        except ValueError:
+        except (ValueError, OSError):
+            # OSError can occur in multiprocessing due to locale._getlang() issues
             continue
 
     return None

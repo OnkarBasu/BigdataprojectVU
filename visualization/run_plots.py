@@ -22,13 +22,28 @@ To run benchmark configurations separately, use:
     # Single benchmark
     python -m scripts.run_detection data/full/aisdk-2025-08-31.csv --workers 4 --chunk-size 10000
     
-    # All 12 configurations (takes some time)
+    python -m scripts.run_detection data/full/aisdk-2025-08-31.csv data/full/aisdk-2025-09-01.csv --workers 4 --chunk-size 10000
+    
     for workers in 1 2 4; do
         for chunk in 10000 100000; do
-            python -m scripts.run_detection data/full/aisdk-2025-08-31.csv --workers $workers --chunk-size $chunk
-            python -m scripts.run_detection data/full/aisdk-2025-09-01.csv --workers $workers --chunk-size $chunk
+            python -m scripts.run_detection data/full/aisdk-2025-08-31.csv data/full/aisdk-2025-09-01.csv --workers $workers --chunk-size $chunk
         done
     done
+
+MEMORY PROFILING:
+=================
+Memory profiling is automatically collected during benchmark execution:
+    - Samples are captured at regular intervals during chunk processing
+    - Output is saved to: pipeline_results/<config>/memory_profile.csv
+    - Columns: elapsed_time_sec, completed_chunks, processed_valid_records, 
+              main_rss_mb, workers_rss_mb, total_rss_mb
+    
+To generate visualization graphs from memory profile data:
+    - Use the plot_memory_timeline() function to visualize RAM usage over time
+    - Use plot_memory_comparison() to compare memory usage across configurations
+    - Generated plots are saved as PNG files in pipeline_results/additional_report/
+
+
 
 INPUT FILES REQUIRED:
 ====================
@@ -48,11 +63,17 @@ Example structure:
 
 OUTPUTS:
 ========
-Generates in pipeline_results/additional_report/ folder:
-    - memory_timeline_*.png (one per benchmark run, ~12 files)
-    - memory_usage_comparison.png (memory vs workers)
-    - execution_speed_comparison.png (time vs workers)
+For each benchmark configuration, generates:
+    - dfsi_results.csv (anomaly detection results with DFSI scores)
+    - memory_profile.csv (memory usage timeline with samples)
+    - top_teleportation_vessel_map.csv (coordinates for top anomalies)
+
+Visualization plots in pipeline_results/additional_report/ folder:
+    - memory_timeline_*.png (one per benchmark run, ~12 files showing RAM over time)
+    - memory_usage_comparison.png (memory vs workers comparison)
+    - execution_speed_comparison.png (time vs workers comparison)
     - combined_performance_analysis.png (4-panel overview)
+    - aggregated_memory_timeline.png (memory trends over time per config, aggregated across input files)
 """
 
 from pathlib import Path
@@ -68,18 +89,28 @@ from visualization.plot_helpers import (
     plot_memory_comparison,
     plot_speed_comparison,
     plot_combined_analysis,
+    plot_aggregated_memory_timeline,
+    DEFAULT_WORKER_COUNTS,
+    DEFAULT_CHUNK_SIZES,
 )
+
+# Benchmark configuration - adjust these to change tested configurations
+WORKER_COUNTS = DEFAULT_WORKER_COUNTS  # [1, 2, 4]
+CHUNK_SIZES = DEFAULT_CHUNK_SIZES      # [10000, 100000]
 
 
 def check_and_run_benchmarks(results_dir: str = "pipeline_results") -> bool:
     """
     Check if benchmark results exist. If not, automatically run all benchmarks.
     
-    Expected benchmark configurations:
-    - 2 datasets: aisdk-2025-08-31.csv, aisdk-2025-09-01.csv
+    Runs benchmarks on multiple input files (treated as a unified streaming chunk flow):
+    - Input files: aisdk-2025-08-31.csv, aisdk-2025-09-01.csv
     - 3 worker counts: 1, 2, 4 workers
     - 2 chunk sizes: 10,000 and 100,000 rows
     - Total: 12 configurations
+    
+    Note: Visualizations aggregate results across all input files since the system
+    processes data in chunks independent of file boundaries (streaming paradigm).
     
     Args:
         results_dir: Directory containing benchmark results
@@ -99,7 +130,7 @@ def check_and_run_benchmarks(results_dir: str = "pipeline_results") -> bool:
     
     if missing_files:
         print("\n" + "="*75)
-        print("⚠ INPUT DATA FILES MISSING")
+        print("[!] INPUT DATA FILES MISSING")
         print("="*75)
         print("\nTo run benchmarks, add these CSV files to data/full/ directory:")
         for f in missing_files:
@@ -115,29 +146,34 @@ def check_and_run_benchmarks(results_dir: str = "pipeline_results") -> bool:
         print("    python visualization/run_plots.py")
         return False
     
-    # Run all 12 benchmark configurations
+    # Run benchmark configurations with dynamic worker/chunk combinations
     print("\n" + "="*75)
     print("RUNNING BENCHMARKS AUTOMATICALLY")
     print("="*75 + "\n")
     
     results_path.mkdir(parents=True, exist_ok=True)
     
-    configs = [
-        ("data/full/aisdk-2025-08-31.csv", 1, 10000),
-        ("data/full/aisdk-2025-08-31.csv", 2, 10000),
-        ("data/full/aisdk-2025-08-31.csv", 4, 10000),
-        ("data/full/aisdk-2025-08-31.csv", 1, 100000),
-        ("data/full/aisdk-2025-08-31.csv", 2, 100000),
-        ("data/full/aisdk-2025-08-31.csv", 4, 100000),
-        ("data/full/aisdk-2025-09-01.csv", 1, 10000),
-        ("data/full/aisdk-2025-09-01.csv", 2, 10000),
-        ("data/full/aisdk-2025-09-01.csv", 4, 10000),
-        ("data/full/aisdk-2025-09-01.csv", 1, 100000),
-        ("data/full/aisdk-2025-09-01.csv", 2, 100000),
-        ("data/full/aisdk-2025-09-01.csv", 4, 100000),
+    # Generate all combinations of input files, workers, and chunk sizes
+    data_files = [
+        "data/full/aisdk-2025-08-31.csv",
+        "data/full/aisdk-2025-09-01.csv",
     ]
     
+    configs = [
+        (data_file, workers, chunk_size)
+        for data_file in data_files
+        for workers in WORKER_COUNTS
+        for chunk_size in CHUNK_SIZES
+    ]
+    
+    total_configs = len(configs)
     successful = 0
+    
+    print(f"Total configurations to run: {total_configs}")
+    print(f"  Input files: {len(data_files)}")
+    print(f"  Worker counts: {WORKER_COUNTS}")
+    print(f"  Chunk sizes: {CHUNK_SIZES}\n")
+    
     for idx, (dataset, workers, chunk_size) in enumerate(configs, 1):
         config_name = Path(dataset).stem
         output_dir = results_path / f"{config_name}_w{workers}_c{chunk_size}"
@@ -152,7 +188,7 @@ def check_and_run_benchmarks(results_dir: str = "pipeline_results") -> bool:
             "--memory-output", str(output_dir / "memory_profile.csv"),
         ]
         
-        print(f"[{idx}/12] Running: {output_dir.name}")
+        print(f"[{idx}/{total_configs}] Running: {output_dir.name}")
         
         try:
             result = subprocess.run(cmd, capture_output=True, timeout=3600)
@@ -166,8 +202,8 @@ def check_and_run_benchmarks(results_dir: str = "pipeline_results") -> bool:
         except Exception as e:
             print(f"        ✗ Error: {e}")
     
-    print(f"\n✓ Benchmarks complete: {successful}/12 successful\n")
-    return successful >= 12
+    print(f"\n[OK] Benchmarks complete: {successful}/{total_configs} successful\n")
+    return successful == total_configs
 
 
 def run_all_plots(
@@ -196,9 +232,9 @@ def run_all_plots(
     # Check if benchmarks exist, if not try to run them
     existing_runs = list(results_path.glob("aisdk-*_w*_c*"))
     if len(existing_runs) < 12:
-        print("\n⚠ Insufficient benchmark results found")
+        print("\n[!] Insufficient benchmark results found")
         if not check_and_run_benchmarks(results_dir):
-            print("⚠ Cannot run benchmarks (missing input CSV files in data/full/)")
+            print("[!] Cannot run benchmarks (missing input CSV files in data/full/)")
             return
     
     # Create output directory
@@ -213,7 +249,7 @@ def run_all_plots(
     runs = collect_benchmark_results(results_path)
     
     if not runs:
-        print(f"⚠ No benchmark results found in {results_dir}/")
+        print(f"[!] No benchmark results found in {results_dir}/")
         return
     
     print(f"✓ Found {len(runs)} benchmark configurations\n")
@@ -232,20 +268,24 @@ def run_all_plots(
                 memory_plots_created += 1
     
     print(f"✓ Created {memory_plots_created} memory timeline plots\n")
-    
     # Generate comparison plots
     print("Generating comparison plots...")
     
     memory_comp_ok = plot_memory_comparison(
-        runs, output_path / "memory_usage_comparison.png"
+        runs, output_path / "memory_usage_comparison.png", chunk_sizes=CHUNK_SIZES
     )
     
     speed_comp_ok = plot_speed_comparison(
-        runs, output_path / "execution_speed_comparison.png"
+        runs, output_path / "execution_speed_comparison.png", chunk_sizes=CHUNK_SIZES
     )
     
     combined_ok = plot_combined_analysis(
-        runs, output_path / "combined_performance_analysis.png"
+        runs, output_path / "combined_performance_analysis.png", chunk_sizes=CHUNK_SIZES
+    )
+    
+    aggregated_ok = plot_aggregated_memory_timeline(
+        results_path, output_path / "aggregated_memory_timeline.png",
+        worker_counts=WORKER_COUNTS, chunk_sizes=CHUNK_SIZES
     )
     
     # Print summary
@@ -259,6 +299,7 @@ def run_all_plots(
     print("  • memory_usage_comparison.png")
     print("  • execution_speed_comparison.png")
     print("  • combined_performance_analysis.png")
+    print("  • aggregated_memory_timeline.png (overall analysis over time)")
     print()
 
 

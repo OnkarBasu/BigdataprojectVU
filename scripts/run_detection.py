@@ -9,6 +9,7 @@ from pathlib import Path
 from src.anomaly_detection import (
     calculate_all_dfsi,
     create_merge_state,
+    get_top_going_dark_vessel_visualization_data,
     get_top_teleportation_vessel_visualization_data,
     merge_chunk_result_into_state,
 )
@@ -81,6 +82,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("data/output/top_teleportation_vessel_map.csv"),
         help="Path to output CSV of top Anomaly D vessel coordinates for map visualization.",
+    )
+    parser.add_argument(
+        "--going-dark-viz-output",
+        type=Path,
+        default=Path("data/output/top_going_dark_vessel_map.csv"),
+        help="Path to output CSV of top Anomaly A vessel coordinates for map visualization.",
     )
     return parser
 
@@ -223,6 +230,54 @@ def write_teleportation_visualization_csv(
             )
 
 
+def write_going_dark_visualization_csv(
+    output_file: Path,
+    mmsi: int,
+    rows: list[dict[str, int | float]],
+) -> None:
+    """
+    Write the top Anomaly A vessel's going dark coordinates for map visualization.
+
+    Each row represents one going dark event (origin -> destination) for the
+    vessel with the highest number of going dark events.
+
+    Args:
+        output_file: Path to the output CSV file.
+        mmsi: Vessel MMSI identifier.
+        rows: List of dicts with lat_origin, lon_origin, lat_destination,
+            lon_destination, event_index, gap_hours, distance_km.
+    """
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    columns = [
+        "mmsi",
+        "event_index",
+        "lat_origin",
+        "lon_origin",
+        "lat_destination",
+        "lon_destination",
+        "gap_hours",
+        "distance_km",
+    ]
+
+    with output_file.open("w", newline="", encoding="utf-8") as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(columns)
+        for row in rows:
+            writer.writerow(
+                [
+                    row["mmsi"],
+                    row["event_index"],
+                    f"{row['lat_origin']:.6f}",
+                    f"{row['lon_origin']:.6f}",
+                    f"{row['lat_destination']:.6f}",
+                    f"{row['lon_destination']:.6f}",
+                    f"{row['gap_hours']:.3f}",
+                    f"{row['distance_km']:.3f}",
+                ]
+            )
+
+
 def merge_ready_results(
     pending_results: dict[int, ChunkProcessingResult],
     next_chunk_id_to_merge: int,
@@ -309,6 +364,7 @@ def main() -> None:
     output_file: Path = args.output
     memory_output_file: Path = args.memory_output
     teleportation_viz_output: Path = args.teleportation_viz_output
+    going_dark_viz_output: Path = args.going_dark_viz_output
 
     if chunk_size <= 0:
         raise ValueError("chunk_size must be greater than 0")
@@ -416,6 +472,21 @@ def main() -> None:
     else:
         print(
             "No teleportation events detected; skipping top vessel map output."
+        )
+
+    going_dark_viz_data = get_top_going_dark_vessel_visualization_data(global_summaries)
+    if going_dark_viz_data is not None:
+        top_dark_mmsi, going_dark_viz_rows = going_dark_viz_data
+        write_going_dark_visualization_csv(
+            going_dark_viz_output, top_dark_mmsi, going_dark_viz_rows
+        )
+        print(
+            f"Top Anomaly A vessel (MMSI={top_dark_mmsi}) map data written to: "
+            f"{going_dark_viz_output}"
+        )
+    else:
+        print(
+            "No going dark events detected; skipping top vessel map output."
         )
 
     total_time = time.perf_counter() - start_time

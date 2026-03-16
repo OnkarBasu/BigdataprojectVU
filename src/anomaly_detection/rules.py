@@ -360,6 +360,65 @@ def get_top_teleportation_vessel_visualization_data(
     return best_mmsi, rows
 
 
+def get_top_going_dark_vessel_visualization_data(
+    global_summaries: dict[int, VesselGlobalSummary],
+) -> tuple[int, list[dict[str, int | float]]] | None:
+    """
+    Find the MMSI with the most Anomaly A (going dark) events and extract
+    coordinate pairs for map visualization.
+
+    Each going dark event represents an AIS blackout during which the vessel
+    moved at least 1 km, suggesting deliberate AIS deactivation. The output
+    provides origin/destination lat/lon and the gap duration for each event.
+
+    Args:
+        global_summaries: Merged vessel summaries keyed by MMSI.
+
+    Returns:
+        None if no vessel has any going dark events. Otherwise a tuple of:
+        - mmsi: The vessel with the highest going dark event count.
+        - rows: List of dicts, each with mmsi, event_index, lat_origin,
+          lon_origin, lat_destination, lon_destination, gap_hours, and
+          distance_km for visualization and tooltip data.
+    """
+    if not global_summaries:
+        return None
+
+    best_mmsi: int | None = None
+    best_count = 0
+
+    for mmsi, summary in global_summaries.items():
+        count = len(summary.going_dark_events)
+        if count > best_count:
+            best_count = count
+            best_mmsi = mmsi
+        elif count == best_count and count > 0 and best_mmsi is not None:
+            if mmsi < best_mmsi:
+                best_mmsi = mmsi
+
+    if best_mmsi is None or best_count == 0:
+        return None
+
+    summary = global_summaries[best_mmsi]
+    rows: list[dict[str, int | float]] = []
+
+    for event_index, event in enumerate(summary.going_dark_events, start=1):
+        rows.append(
+            {
+                "mmsi": event.mmsi,
+                "event_index": event_index,
+                "lat_origin": event.start_latitude,
+                "lon_origin": event.start_longitude,
+                "lat_destination": event.end_latitude,
+                "lon_destination": event.end_longitude,
+                "gap_hours": event.gap_hours,
+                "distance_km": event.distance_km,
+            }
+        )
+
+    return best_mmsi, rows
+
+
 def _validate_same_mmsi(previous: AISRecord, current: AISRecord) -> None:
     """
     Validate that two AIS records belong to the same vessel.

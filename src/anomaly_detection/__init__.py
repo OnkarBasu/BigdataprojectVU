@@ -12,6 +12,7 @@ from .rules import (
     detect_draft_change,
     detect_going_dark,
     detect_teleportation,
+    get_top_going_dark_vessel_visualization_data,
     get_top_teleportation_vessel_visualization_data,
     kilometers_to_nautical_miles,
 )
@@ -35,6 +36,7 @@ __all__ = [
     "detect_draft_change",
     "detect_teleportation",
     "detect_all_pair_anomalies",
+    "get_top_going_dark_vessel_visualization_data",
     "get_top_teleportation_vessel_visualization_data",
     "MergeState",
     "create_merge_state",

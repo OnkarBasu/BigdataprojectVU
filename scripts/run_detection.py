@@ -13,6 +13,7 @@ from src.anomaly_detection import (
     get_top_teleportation_vessel_visualization_data,
     merge_chunk_result_into_state,
 )
+from src.anomaly_detection.rules import detect_loitering_transfers
 from src.parallel import process_chunk, worker_init
 from src.performance import (
     MemorySample,
@@ -22,6 +23,7 @@ from src.performance import (
 )
 from src.streaming import stream_csv_files_in_chunks
 from src.models import ChunkProcessingResult
+from src.models.events import LoiteringTransferEvent
 from src.utils import load_port_zones
 
 
@@ -89,6 +91,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default=Path("data/output/top_going_dark_vessel_map.csv"),
         help="Path to output CSV of top Anomaly A vessel coordinates for map visualization.",
     )
+    parser.add_argument(
+        "--loitering-viz-output",
+        type=Path,
+        default=Path("data/output/top_loitering_vessel_map.csv"),
+        help="Path to output CSV of top Anomaly B vessel coordinates for map visualization.",
+    )
     return parser
 
 
@@ -123,6 +131,7 @@ def write_results_csv(
                 "teleportation_events",
                 "teleportation_d1_events",
                 "teleportation_d2_events",
+                "loitering_transfer_events",
             ]
         )
 
@@ -142,6 +151,7 @@ def write_results_csv(
                     len(summary.teleportation_events),
                     len(summary.teleportation_d1_events),
                     len(summary.teleportation_d2_events),
+                    len(summary.loitering_transfer_events),
                 ]
             )
 
@@ -284,6 +294,126 @@ def write_going_dark_visualization_csv(
             )
 
 
+def write_loitering_visualization_csv(
+    output_file: Path,
+    mmsi: int,
+    rows: list[dict[str, int | float | str]],
+) -> None:
+    """Write the top Anomaly B vessel's paired coordinates for map visualization."""
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    columns = [
+        "focus_mmsi",
+        "event_index",
+        "mmsi_a",
+        "mmsi_b",
+        "start_timestamp",
+        "end_timestamp",
+        "duration_hours",
+        "start_lat_a",
+        "start_lon_a",
+        "start_lat_b",
+        "start_lon_b",
+        "end_lat_a",
+        "end_lon_a",
+        "end_lat_b",
+        "end_lon_b",
+        "min_distance_km",
+        "avg_distance_km",
+    ]
+
+    with output_file.open("w", newline="", encoding="utf-8") as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(columns)
+        for row in rows:
+            writer.writerow(
+                [
+                    row["focus_mmsi"],
+                    row["event_index"],
+                    row["mmsi_a"],
+                    row["mmsi_b"],
+                    row["start_timestamp"],
+                    row["end_timestamp"],
+                    f"{row['duration_hours']:.3f}",
+                    f"{row['start_lat_a']:.6f}",
+                    f"{row['start_lon_a']:.6f}",
+                    f"{row['start_lat_b']:.6f}",
+                    f"{row['start_lon_b']:.6f}",
+                    f"{row['end_lat_a']:.6f}",
+                    f"{row['end_lon_a']:.6f}",
+                    f"{row['end_lat_b']:.6f}",
+                    f"{row['end_lon_b']:.6f}",
+                    f"{row['min_distance_km']:.3f}",
+                    f"{row['avg_distance_km']:.3f}",
+                ]
+            )
+
+
+def get_top_loitering_vessel_visualization_data(
+    global_summaries: dict,
+) -> tuple[int, list[dict[str, int | float | str]]] | None:
+    """Find the MMSI with the most anomaly B events and extract paired coordinates."""
+    if not global_summaries:
+        return None
+
+    best_mmsi: int | None = None
+    best_count = 0
+
+    for mmsi, summary in global_summaries.items():
+        count = len(summary.loitering_transfer_events)
+        if count > best_count:
+            best_count = count
+            best_mmsi = mmsi
+        elif count == best_count and count > 0 and best_mmsi is not None and mmsi < best_mmsi:
+            best_mmsi = mmsi
+
+    if best_mmsi is None or best_count == 0:
+        return None
+
+    summary = global_summaries[best_mmsi]
+    rows: list[dict[str, int | float | str]] = []
+
+    for event_index, event in enumerate(summary.loitering_transfer_events, start=1):
+        rows.append(
+            {
+                "focus_mmsi": best_mmsi,
+                "event_index": event_index,
+                "mmsi_a": event.mmsi_a,
+                "mmsi_b": event.mmsi_b,
+                "start_timestamp": event.start_timestamp.isoformat(),
+                "end_timestamp": event.end_timestamp.isoformat(),
+                "duration_hours": event.duration_hours,
+                "start_lat_a": event.start_lat_a,
+                "start_lon_a": event.start_lon_a,
+                "start_lat_b": event.start_lat_b,
+                "start_lon_b": event.start_lon_b,
+                "end_lat_a": event.end_lat_a,
+                "end_lon_a": event.end_lon_a,
+                "end_lat_b": event.end_lat_b,
+                "end_lon_b": event.end_lon_b,
+                "min_distance_km": event.min_distance_km,
+                "avg_distance_km": event.avg_distance_km,
+            }
+        )
+
+    return best_mmsi, rows
+
+
+def attach_loitering_events_to_summaries(
+    global_summaries: dict,
+    loitering_events: list[LoiteringTransferEvent],
+) -> None:
+    """Attach each anomaly B event to both vessels that participate in it."""
+    for event in loitering_events:
+        summary_a = global_summaries.get(event.mmsi_a)
+        if summary_a is not None:
+            summary_a.loitering_transfer_events.append(event)
+
+        summary_b = global_summaries.get(event.mmsi_b)
+        if summary_b is not None and event.mmsi_b != event.mmsi_a:
+            summary_b.loitering_transfer_events.append(event)
+
+
 def merge_ready_results(
     pending_results: dict[int, ChunkProcessingResult],
     next_chunk_id_to_merge: int,
@@ -371,6 +501,7 @@ def main() -> None:
     memory_output_file: Path = args.memory_output
     teleportation_viz_output: Path = args.teleportation_viz_output
     going_dark_viz_output: Path = args.going_dark_viz_output
+    loitering_viz_output: Path = args.loitering_viz_output
 
     if chunk_size <= 0:
         raise ValueError("chunk_size must be greater than 0")
@@ -451,6 +582,13 @@ def main() -> None:
         raise RuntimeError(f"Unexpected pending results after pool completion: {missing}")
 
     global_summaries = merge_state.global_summaries
+
+    loitering_events = detect_loitering_transfers(
+        global_summaries=global_summaries,
+        port_zones=port_zones,
+    )
+    attach_loitering_events_to_summaries(global_summaries, loitering_events)
+
     dfsi_scores = calculate_all_dfsi(global_summaries)
 
     ranked_scores = sorted(
@@ -495,6 +633,23 @@ def main() -> None:
             "No going dark events detected; skipping top vessel map output."
         )
 
+    loitering_viz_data = get_top_loitering_vessel_visualization_data(global_summaries)
+    if loitering_viz_data is not None:
+        top_loitering_mmsi, loitering_viz_rows = loitering_viz_data
+        write_loitering_visualization_csv(
+            loitering_viz_output,
+            top_loitering_mmsi,
+            loitering_viz_rows,
+        )
+        print(
+            f"Top Anomaly B vessel (MMSI={top_loitering_mmsi}) map data written to: "
+            f"{loitering_viz_output}"
+        )
+    else:
+        print(
+            "No loitering-transfer events detected; skipping top vessel map output."
+        )
+
     total_time = time.perf_counter() - start_time
     final_memory_rss_mb = get_rss_mb(process)
 
@@ -513,6 +668,7 @@ def main() -> None:
     print(f"Peak workers RSS:        {peak_workers_rss_mb:.2f} MB")
     print(f"Peak total RSS:          {peak_total_rss_mb:.2f} MB")
     print(f"Final memory RSS:        {final_memory_rss_mb:.2f} MB")
+    print(f"Loitering-transfer events detected: {len(loitering_events)}")
     print("=" * 80)
 
     print(f"Top {min(top_n, len(ranked_scores))} vessels by DFSI:")
@@ -527,7 +683,8 @@ def main() -> None:
             f"going_dark={len(summary.going_dark_events)} | "
             f"teleportation={len(summary.teleportation_events)} | "
             f"D1={len(summary.teleportation_d1_events)} | "
-            f"D2={len(summary.teleportation_d2_events)}"
+            f"D2={len(summary.teleportation_d2_events)} | "
+            f"B={len(summary.loitering_transfer_events)}"
         )
 
 

@@ -14,6 +14,7 @@ from src.utils.ports import PortZone
 
 PORT_ZONES: Sequence[PortZone] | None = None
 ROW_PARSER: AISRowParser | None = None
+ABC_SAMPLING_SECONDS = 5 * 60
 
 
 def worker_init() -> None:
@@ -77,6 +78,29 @@ def _group_records_by_mmsi(records: list[AISRecord]) -> dict[int, list[AISRecord
     return grouped
 
 
+def _downsample_records(
+    records: list[AISRecord],
+    sampling_seconds: int,
+) -> list[AISRecord]:
+    """Keep at most one record per sampling interval for one vessel."""
+    if sampling_seconds <= 0 or len(records) <= 1:
+        return records
+
+    sampled: list[AISRecord] = [records[0]]
+    last_kept = records[0]
+
+    for record in records[1:]:
+        gap_seconds = (record.timestamp - last_kept.timestamp).total_seconds()
+        if gap_seconds >= sampling_seconds:
+            sampled.append(record)
+            last_kept = record
+
+    if sampled[-1] is not records[-1]:
+        sampled.append(records[-1])
+
+    return sampled
+
+
 def _build_vessel_chunk_summary(
     mmsi: int,
     records: list[AISRecord],
@@ -90,16 +114,19 @@ def _build_vessel_chunk_summary(
 
     first_record = records[0]
     last_record = records[-1]
+    sampled_records = _downsample_records(records, ABC_SAMPLING_SECONDS)
 
     summary = VesselChunkSummary(
         mmsi=mmsi,
         record_count=len(records),
         first_record=first_record,
         last_record=last_record,
+        sampled_records=sampled_records,
     )
 
-    for previous, current in zip(records, records[1:]):
-        going_dark_event, draft_change_event, teleportation_event = detect_all_pair_anomalies(
+    # A and C on sampled records
+    for previous, current in zip(sampled_records, sampled_records[1:]):
+        going_dark_event, draft_change_event, _ = detect_all_pair_anomalies(
             previous=previous,
             current=current,
             port_zones=PORT_ZONES,
@@ -112,6 +139,14 @@ def _build_vessel_chunk_summary(
         if draft_change_event is not None:
             summary.draft_change_events.append(draft_change_event)
             summary.draft_change_count += 1
+
+    # D on full-resolution records
+    for previous, current in zip(records, records[1:]):
+        _, _, teleportation_event = detect_all_pair_anomalies(
+            previous=previous,
+            current=current,
+            port_zones=PORT_ZONES,
+        )
 
         if teleportation_event is not None:
             summary.teleportation_events.append(teleportation_event)

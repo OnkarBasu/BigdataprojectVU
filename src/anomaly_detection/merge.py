@@ -38,12 +38,7 @@ class MergeState:
 
 
 def create_merge_state() -> MergeState:
-    """
-    Create an empty merge state for incremental chunk merging.
-
-    Returns:
-        Initialized merge state.
-    """
+    """Create an empty merge state for incremental chunk merging."""
     return MergeState()
 
 
@@ -53,13 +48,7 @@ def merge_chunk_result_into_state(
     port_zones: Sequence[PortZone] | None = None,
     minimum_port_radius_km: float = 0.0,
 ) -> None:
-    """
-    Merge a single chunk result into the incremental global state.
-
-    Args:
-        merge_state: Incremental merge state maintained by the main process.
-        chunk_result: Per-chunk worker result to merge.
-    """
+    """Merge a single chunk result into the incremental global state."""
     for mmsi, chunk_summary in chunk_result.vessel_summaries.items():
         global_summary = merge_state.global_summaries.get(mmsi)
         if global_summary is None:
@@ -90,21 +79,7 @@ def merge_chunk_results(
     port_zones: Sequence[PortZone] | None = None,
     minimum_port_radius_km: float = 0.0,
 ) -> dict[int, VesselGlobalSummary]:
-    """
-    Merge per-chunk worker results into global per-vessel summaries.
-
-    The function:
-    - sorts chunk results by chunk_id;
-    - merges local per-vessel aggregates and events;
-    - detects anomalies across chunk boundaries using the last record from
-      the previous chunk and the first record from the current chunk.
-
-    Args:
-        chunk_results: Worker results from processed chunks.
-
-    Returns:
-        Dictionary mapping MMSI to fully merged vessel summaries.
-    """
+    """Merge per-chunk worker results into global per-vessel summaries."""
     merge_state = create_merge_state()
 
     for chunk_result in sorted(chunk_results, key=lambda result: result.chunk_id):
@@ -122,13 +97,7 @@ def _merge_local_chunk_summary(
     global_summary: VesselGlobalSummary,
     chunk_summary: VesselChunkSummary,
 ) -> None:
-    """
-    Merge local worker results for one vessel into the global summary.
-
-    Args:
-        global_summary: Accumulated global vessel summary.
-        chunk_summary: Per-chunk vessel summary produced by a worker.
-    """
+    """Merge local worker results for one vessel into the global summary."""
     global_summary.record_count += chunk_summary.record_count
     global_summary.max_gap_hours = max(
         global_summary.max_gap_hours,
@@ -140,6 +109,8 @@ def _merge_local_chunk_summary(
     global_summary.going_dark_events.extend(chunk_summary.going_dark_events)
     global_summary.draft_change_events.extend(chunk_summary.draft_change_events)
     global_summary.teleportation_events.extend(chunk_summary.teleportation_events)
+    global_summary.teleportation_d1_events.extend(chunk_summary.teleportation_d1_events)
+    global_summary.teleportation_d2_events.extend(chunk_summary.teleportation_d2_events)
 
 
 def _merge_boundary_anomalies(
@@ -150,37 +121,26 @@ def _merge_boundary_anomalies(
     port_zones: Sequence[PortZone] | None = None,
     minimum_port_radius_km: float = 0.0,
 ) -> None:
-    """
-    Detect and merge anomalies spanning across chunk boundaries.
-
-    Args:
-        global_summary: Accumulated global vessel summary.
-        boundary_state: Previously seen boundary state for the same vessel.
-        current_chunk_id: ID of the current chunk being merged.
-        current_summary: Current chunk summary for the vessel.
-    """
+    """Detect and merge anomalies spanning across chunk boundaries."""
     if boundary_state is None:
         return
 
-    if boundary_state.last_chunk_id == current_chunk_id:
+    if boundary_state.last_chunk_id >= current_chunk_id:
         return
 
-    previous_record = boundary_state.last_record
-    current_record = current_summary.first_record
+    previous = boundary_state.last_record
+    current = current_summary.first_record
 
     going_dark_event, draft_change_event, teleportation_event = detect_all_pair_anomalies(
-        previous=previous_record,
-        current=current_record,
+        previous=previous,
+        current=current,
         port_zones=port_zones,
         minimum_port_radius_km=minimum_port_radius_km,
     )
 
     if going_dark_event is not None:
         global_summary.going_dark_events.append(going_dark_event)
-        global_summary.max_gap_hours = max(
-            global_summary.max_gap_hours,
-            going_dark_event.gap_hours,
-        )
+        global_summary.max_gap_hours = max(global_summary.max_gap_hours, going_dark_event.gap_hours)
 
     if draft_change_event is not None:
         global_summary.draft_change_events.append(draft_change_event)
@@ -188,4 +148,8 @@ def _merge_boundary_anomalies(
 
     if teleportation_event is not None:
         global_summary.teleportation_events.append(teleportation_event)
-        global_summary.total_impossible_jump_km += teleportation_event.distance_km
+        if teleportation_event.subtype == "D1":
+            global_summary.teleportation_d1_events.append(teleportation_event)
+        else:
+            global_summary.teleportation_d2_events.append(teleportation_event)
+            global_summary.total_impossible_jump_km += teleportation_event.distance_km

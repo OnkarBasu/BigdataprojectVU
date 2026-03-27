@@ -116,11 +116,13 @@ def write_results_csv(
                 "DFSI",
                 "record_count",
                 "max_gap_hours",
-                "impossible_jump_km",
+                "impossible_relocation_km_d2",
                 "draft_change_count",
                 "going_dark_events",
                 "draft_change_events",
                 "teleportation_events",
+                "teleportation_d1_events",
+                "teleportation_d2_events",
             ]
         )
 
@@ -138,6 +140,8 @@ def write_results_csv(
                     len(summary.going_dark_events),
                     len(summary.draft_change_events),
                     len(summary.teleportation_events),
+                    len(summary.teleportation_d1_events),
+                    len(summary.teleportation_d2_events),
                 ]
             )
 
@@ -185,7 +189,7 @@ def write_memory_samples_csv(
 def write_teleportation_visualization_csv(
     output_file: Path,
     mmsi: int,
-    rows: list[dict[str, int | float]],
+    rows: list[dict[str, int | float | str]],
 ) -> None:
     """
     Write the top Anomaly D vessel's teleportation coordinates for map visualization.
@@ -208,6 +212,7 @@ def write_teleportation_visualization_csv(
         "lon_origin",
         "lat_destination",
         "lon_destination",
+        "subtype",
         "implied_speed_knots",
         "distance_km",
     ]
@@ -224,6 +229,7 @@ def write_teleportation_visualization_csv(
                     f"{row['lon_origin']:.6f}",
                     f"{row['lat_destination']:.6f}",
                     f"{row['lon_destination']:.6f}",
+                    row["subtype"],
                     f"{row['implied_speed_knots']:.3f}",
                     f"{row['distance_km']:.3f}",
                 ]
@@ -516,10 +522,12 @@ def main() -> None:
             f"{rank:>2}. MMSI={mmsi} | "
             f"DFSI={score:.3f} | "
             f"max_gap_hours={summary.max_gap_hours:.2f} | "
-            f"impossible_jump_km={summary.total_impossible_jump_km:.2f} | "
+            f"impossible_relocation_km_d2={summary.total_impossible_jump_km:.2f} | "
             f"draft_changes={summary.draft_change_count} | "
             f"going_dark={len(summary.going_dark_events)} | "
-            f"teleportation={len(summary.teleportation_events)}"
+            f"teleportation={len(summary.teleportation_events)} | "
+            f"D1={len(summary.teleportation_d1_events)} | "
+            f"D2={len(summary.teleportation_d2_events)}"
         )
 
 

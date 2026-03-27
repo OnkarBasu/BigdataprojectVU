@@ -17,11 +17,7 @@ ROW_PARSER: AISRowParser | None = None
 
 
 def worker_init() -> None:
-    """
-    Initialize per-process worker state.
-
-    This avoids doing repeated setup work for every processed chunk.
-    """
+    """Initialize per-process worker state."""
     global PORT_ZONES
     global ROW_PARSER
 
@@ -33,22 +29,7 @@ def worker_init() -> None:
 
 
 def process_chunk(task: Chunk) -> ChunkProcessingResult:
-    """
-    Process a single raw AIS chunk and compute per-vessel partial summaries.
-
-    The worker:
-    - parses raw rows into ``AISRecord`` objects;
-    - drops invalid rows;
-    - groups valid records by MMSI;
-    - sorts records per vessel by timestamp;
-    - detects local pairwise anomalies inside the chunk.
-
-    Args:
-        task: Chunk represented as ``(chunk_id, raw_rows)``.
-
-    Returns:
-        ChunkProcessingResult containing local per-vessel summaries.
-    """
+    """Process a single raw AIS chunk and compute per-vessel partial summaries."""
     chunk_id, raw_rows = task
     start_time = time.perf_counter()
 
@@ -72,15 +53,7 @@ def process_chunk(task: Chunk) -> ChunkProcessingResult:
 
 
 def _parse_raw_rows(raw_rows: list[tuple[str, str, str, str, str, str, str]]) -> list[AISRecord]:
-    """
-    Parse all raw rows in a chunk into valid AIS records.
-
-    Args:
-        raw_rows: Compact raw AIS rows.
-
-    Returns:
-        List of successfully parsed AIS records.
-    """
+    """Parse all raw rows in a chunk into valid AIS records."""
     if ROW_PARSER is None:
         raise RuntimeError("ROW_PARSER is not initialized in worker process")
 
@@ -95,15 +68,7 @@ def _parse_raw_rows(raw_rows: list[tuple[str, str, str, str, str, str, str]]) ->
 
 
 def _group_records_by_mmsi(records: list[AISRecord]) -> dict[int, list[AISRecord]]:
-    """
-    Group AIS records by MMSI.
-
-    Args:
-        records: Valid AIS records from a single chunk.
-
-    Returns:
-        Dictionary mapping MMSI to records for that vessel.
-    """
+    """Group AIS records by MMSI."""
     grouped: DefaultDict[int, list[AISRecord]] = defaultdict(list)
 
     for record in records:
@@ -116,20 +81,7 @@ def _build_vessel_chunk_summary(
     mmsi: int,
     records: list[AISRecord],
 ) -> VesselChunkSummary:
-    """
-    Build a partial per-vessel anomaly summary for one chunk.
-
-    Args:
-        mmsi: Vessel MMSI identifier.
-        records: Time-sorted valid AIS records for this vessel inside one chunk.
-
-    Returns:
-        VesselChunkSummary with local aggregates, boundary records,
-        and anomaly events detected fully inside the chunk.
-
-    Raises:
-        ValueError: If ``records`` is empty.
-    """
+    """Build a partial per-vessel anomaly summary for one chunk."""
     if not records:
         raise ValueError("records must not be empty")
 
@@ -163,6 +115,10 @@ def _build_vessel_chunk_summary(
 
         if teleportation_event is not None:
             summary.teleportation_events.append(teleportation_event)
-            summary.total_impossible_jump_km += teleportation_event.distance_km
+            if teleportation_event.subtype == "D1":
+                summary.teleportation_d1_events.append(teleportation_event)
+            else:
+                summary.teleportation_d2_events.append(teleportation_event)
+                summary.total_impossible_jump_km += teleportation_event.distance_km
 
     return summary

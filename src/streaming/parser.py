@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterable
+import math
 
 from src.models import AISRecord
 from src.streaming.types import RawRow
@@ -328,28 +329,58 @@ class AISRowParser:
     @staticmethod
     def _is_valid_latitude(latitude: float) -> bool:
         """
-        Validate latitude range.
+        Validates if the given latitude is a finite number within the range [-90, 90].
 
         Args:
-            latitude: Parsed latitude.
+            latitude: The latitude value to validate.
 
         Returns:
-            True if latitude is within [-90, 90].
+            True if the latitude is finite and within range, False otherwise (including None).
         """
-        return -90.0 <= latitude <= 90.0
+        if latitude is None:
+            return False
+        if not math.isfinite(latitude):
+            return False
+        if not (-90.0 <= latitude <= 90.0):
+            return False
+        return True
 
     @staticmethod
     def _is_valid_longitude(longitude: float) -> bool:
         """
-        Validate longitude range.
+        Validates if the given longitude is a finite number within the range [-180, 180].
 
         Args:
-            longitude: Parsed longitude.
+            longitude: The longitude value to validate.
 
         Returns:
-            True if longitude is within [-180, 180].
+            True if the longitude is finite and within range, False otherwise (including None).
         """
-        return -180.0 <= longitude <= 180.0
+        if longitude is None:
+            return False
+        if not math.isfinite(longitude):
+            return False
+        if not (-180.0 <= longitude <= 180.0):
+            return False
+        return True
+
+    @staticmethod
+    def _is_zero_coordinate(lat: float, lon: float) -> bool:
+        """
+        Checks if the coordinates are effectively zero (0,0).
+
+        This is often used to identify placeholder or invalid GPS/AIS data where
+        latitude and longitude are missing or reset to origin.
+
+        Args:
+            lat: The latitude value to check.
+            lon: The longitude value to check.
+
+        Returns:
+            True if both latitude and longitude are within a small epsilon of 0.0,
+            False otherwise.
+        """
+        return abs(lat) < 1e-6 and abs(lon) < 1e-6
 
     def parse_row(self, row: RawRow) -> AISRecord | None:
         """
@@ -383,6 +414,9 @@ class AISRowParser:
 
         longitude = _parse_float(row[LONGITUDE_INDEX])
         if longitude is None or not self._is_valid_longitude(longitude):
+            return None
+
+        if self._is_zero_coordinate(latitude, longitude):
             return None
 
         sog = _parse_float(row[SOG_INDEX])

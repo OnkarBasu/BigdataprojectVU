@@ -21,6 +21,7 @@ class BoundaryState:
 
     last_record: AISRecord
     last_chunk_id: int
+    last_sampled_record: AISRecord | None
 
 
 @dataclass(slots=True)
@@ -71,6 +72,11 @@ def merge_chunk_result_into_state(
         merge_state.boundary_states[mmsi] = BoundaryState(
             last_record=chunk_summary.last_record,
             last_chunk_id=chunk_result.chunk_id,
+            last_sampled_record=(
+                chunk_summary.sampled_records[-1]
+                if chunk_summary.sampled_records
+                else None
+            ),
         )
 
 
@@ -111,6 +117,7 @@ def _merge_local_chunk_summary(
     global_summary.teleportation_events.extend(chunk_summary.teleportation_events)
     global_summary.teleportation_d1_events.extend(chunk_summary.teleportation_d1_events)
     global_summary.teleportation_d2_events.extend(chunk_summary.teleportation_d2_events)
+    global_summary.sampled_records.extend(chunk_summary.sampled_records)
 
 
 def _merge_boundary_anomalies(
@@ -128,23 +135,40 @@ def _merge_boundary_anomalies(
     if boundary_state.last_chunk_id >= current_chunk_id:
         return
 
+    if (
+            boundary_state.last_sampled_record is not None
+            and current_summary.sampled_records
+    ):
+        prev_sampled = boundary_state.last_sampled_record
+        curr_sampled = current_summary.sampled_records[0]
+
+        going_dark_event, draft_change_event, _ = detect_all_pair_anomalies(
+            previous=prev_sampled,
+            current=curr_sampled,
+            port_zones=port_zones,
+            minimum_port_radius_km=minimum_port_radius_km,
+        )
+
+        if going_dark_event is not None:
+            global_summary.going_dark_events.append(going_dark_event)
+            global_summary.max_gap_hours = max(
+                global_summary.max_gap_hours,
+                going_dark_event.gap_hours,
+            )
+
+        if draft_change_event is not None:
+            global_summary.draft_change_events.append(draft_change_event)
+            global_summary.draft_change_count += 1
+
     previous = boundary_state.last_record
     current = current_summary.first_record
 
-    going_dark_event, draft_change_event, teleportation_event = detect_all_pair_anomalies(
+    _, _, teleportation_event = detect_all_pair_anomalies(
         previous=previous,
         current=current,
         port_zones=port_zones,
         minimum_port_radius_km=minimum_port_radius_km,
     )
-
-    if going_dark_event is not None:
-        global_summary.going_dark_events.append(going_dark_event)
-        global_summary.max_gap_hours = max(global_summary.max_gap_hours, going_dark_event.gap_hours)
-
-    if draft_change_event is not None:
-        global_summary.draft_change_events.append(draft_change_event)
-        global_summary.draft_change_count += 1
 
     if teleportation_event is not None:
         global_summary.teleportation_events.append(teleportation_event)

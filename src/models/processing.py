@@ -3,7 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from src.models.ais import AISRecord
-from src.models.events import DraftChangeEvent, GoingDarkEvent, TeleportationEvent
+from src.models.events import (
+    DraftChangeEvent,
+    GoingDarkEvent,
+    TeleportationEvent,
+    LoiteringTransferEvent
+)
 
 
 @dataclass(slots=True)
@@ -30,6 +35,7 @@ class VesselChunkSummary:
         teleportation_events: All local anomaly D events detected inside the chunk.
         teleportation_d1_events: Local D1 near-simultaneous cloning events.
         teleportation_d2_events: Local D2 impossible-relocation events.
+        sampled_records: Time discretization.
     """
 
     mmsi: int
@@ -44,6 +50,7 @@ class VesselChunkSummary:
     teleportation_events: list[TeleportationEvent] = field(default_factory=list)
     teleportation_d1_events: list[TeleportationEvent] = field(default_factory=list)
     teleportation_d2_events: list[TeleportationEvent] = field(default_factory=list)
+    sampled_records: list[AISRecord] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -64,6 +71,7 @@ class ChunkProcessingResult:
     valid_record_count: int
     elapsed_time: float
     vessel_summaries: dict[int, VesselChunkSummary]
+    loitering_transfer_events: list[LoiteringTransferEvent] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -106,3 +114,4 @@ class VesselGlobalSummary:
     teleportation_events: list[TeleportationEvent] = field(default_factory=list)
     teleportation_d1_events: list[TeleportationEvent] = field(default_factory=list)
     teleportation_d2_events: list[TeleportationEvent] = field(default_factory=list)
+    loitering_transfer_events: list[LoiteringTransferEvent] = field(default_factory=list)

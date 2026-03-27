@@ -2,7 +2,8 @@ from src.models.ais import AISRecord
 from src.models.events import (
     DraftChangeEvent,
     GoingDarkEvent,
-    TeleportationEvent
+    TeleportationEvent,
+    LoiteringTransferEvent
 )
 from src.models.processing import (
     ChunkProcessingResult,
@@ -17,5 +18,6 @@ __all__ = [
     "TeleportationEvent",
     "VesselChunkSummary",
     "ChunkProcessingResult",
-    "VesselGlobalSummary"
+    "VesselGlobalSummary",
+    "LoiteringTransferEvent"
 ]

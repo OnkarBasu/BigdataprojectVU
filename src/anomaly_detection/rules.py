@@ -17,6 +17,10 @@ HOURS_IN_DAY = 24.0
 MINUTES_IN_HOUR = 60.0
 SECONDS_IN_HOUR = 3600.0
 KM_PER_NAUTICAL_MILE = 1.852
+DEFAULT_D1_MAX_GAP_HOURS = 0.5
+DEFAULT_D2_MAX_GAP_HOURS = 24.0
+DEFAULT_D_MIN_GAP_SECONDS = 30.0
+DEFAULT_D_MIN_DISTANCE_KM = 1.0
 
 
 def calculate_time_gap_hours(previous: AISRecord, current: AISRecord) -> float:
@@ -92,18 +96,6 @@ def detect_going_dark(
     the vessel appears to have moved at least ``min_distance_km`` between
     the last known position before blackout and the first known position
     after blackout.
-
-    Args:
-        previous: Earlier AIS record for the same MMSI.
-        current: Later AIS record for the same MMSI.
-        min_gap_hours: Minimum blackout duration required to flag anomaly.
-        min_distance_km: Minimum distance indicating vessel movement.
-
-    Returns:
-        GoingDarkEvent if anomaly A is detected, otherwise None.
-
-    Raises:
-        ValueError: If the records belong to different MMSI values.
     """
     _validate_same_mmsi(previous, current)
 
@@ -196,28 +188,33 @@ def detect_teleportation(
     previous: AISRecord,
     current: AISRecord,
     max_speed_knots: float = 60.0,
+    d1_max_gap_hours: float = DEFAULT_D1_MAX_GAP_HOURS,
+    d2_max_gap_hours: float = DEFAULT_D2_MAX_GAP_HOURS,
+    min_gap_seconds: float = DEFAULT_D_MIN_GAP_SECONDS,
+    min_distance_km: float = DEFAULT_D_MIN_DISTANCE_KM,
 ) -> TeleportationEvent | None:
     """
-    Detect anomaly D ("Identity Cloning / Teleportation") for a pair of AIS records.
+    Detect anomaly D for a pair of AIS records.
 
-    The anomaly is flagged when the movement implied by two consecutive AIS
-    messages for the same MMSI requires travel faster than ``max_speed_knots``.
+    The logic distinguishes two deterministic subtypes:
+    - D1: near-simultaneous cloning within ``d1_max_gap_hours``;
+    - D2: impossible relocation after a longer blackout, up to
+      ``d2_max_gap_hours``.
 
-    Args:
-        previous: Earlier AIS record for the same MMSI.
-        current: Later AIS record for the same MMSI.
-        max_speed_knots: Maximum physically plausible speed in knots.
-
-    Returns:
-        TeleportationEvent if anomaly D is detected, otherwise None.
-
-    Raises:
-        ValueError: If the records belong to different MMSI values.
+    The pair is ignored when the time gap is too small, when a coordinate is
+    the common placeholder ``(0, 0)``, or when the spatial displacement is too
+    small to be meaningful.
     """
     _validate_same_mmsi(previous, current)
 
     gap_hours = calculate_time_gap_hours(previous, current)
-    if gap_hours <= 0:
+    gap_seconds = gap_hours * SECONDS_IN_HOUR
+    if gap_seconds < min_gap_seconds:
+        return None
+
+    if _is_zero_coordinate(previous.latitude, previous.longitude):
+        return None
+    if _is_zero_coordinate(current.latitude, current.longitude):
         return None
 
     distance_km = calculate_distance(
@@ -226,13 +223,23 @@ def detect_teleportation(
         current.latitude,
         current.longitude,
     )
-    implied_speed_knots = calculate_implied_speed_knots(distance_km, gap_hours)
+    if distance_km <= min_distance_km:
+        return None
 
+    implied_speed_knots = calculate_implied_speed_knots(distance_km, gap_hours)
     if implied_speed_knots <= max_speed_knots:
+        return None
+
+    if gap_hours <= d1_max_gap_hours:
+        subtype = "D1"
+    elif gap_hours <= d2_max_gap_hours:
+        subtype = "D2"
+    else:
         return None
 
     return TeleportationEvent(
         mmsi=previous.mmsi,
+        subtype=subtype,
         start_timestamp=previous.timestamp,
         end_timestamp=current.timestamp,
         gap_hours=gap_hours,
@@ -253,6 +260,10 @@ def detect_all_pair_anomalies(
     draft_change_min_gap_hours: float = 2.0,
     draft_change_min_relative_change: float = 0.05,
     teleportation_max_speed_knots: float = 60.0,
+    teleportation_d1_max_gap_hours: float = DEFAULT_D1_MAX_GAP_HOURS,
+    teleportation_d2_max_gap_hours: float = DEFAULT_D2_MAX_GAP_HOURS,
+    teleportation_min_gap_seconds: float = DEFAULT_D_MIN_GAP_SECONDS,
+    teleportation_min_distance_km: float = DEFAULT_D_MIN_DISTANCE_KM,
     port_zones: Sequence[PortZone] | None = None,
     minimum_port_radius_km: float = 0.0,
 ) -> tuple[GoingDarkEvent | None, DraftChangeEvent | None, TeleportationEvent | None]:
@@ -261,21 +272,6 @@ def detect_all_pair_anomalies(
 
     This helper runs anomaly A, C, and D detection for a pair of consecutive
     records belonging to the same vessel.
-
-    Args:
-        previous: Earlier AIS record.
-        current: Later AIS record.
-        going_dark_min_gap_hours: Minimum blackout duration for anomaly A.
-        going_dark_min_distance_km: Minimum distance for anomaly A.
-        draft_change_min_gap_hours: Minimum blackout duration for anomaly C.
-        draft_change_min_relative_change: Minimum relative draught change for anomaly C.
-        teleportation_max_speed_knots: Maximum plausible speed for anomaly D.
-
-    Returns:
-        Tuple of:
-            - GoingDarkEvent or None
-            - DraftChangeEvent or None
-            - TeleportationEvent or None
     """
     going_dark_event = detect_going_dark(
         previous=previous,
@@ -295,6 +291,10 @@ def detect_all_pair_anomalies(
         previous=previous,
         current=current,
         max_speed_knots=teleportation_max_speed_knots,
+        d1_max_gap_hours=teleportation_d1_max_gap_hours,
+        d2_max_gap_hours=teleportation_d2_max_gap_hours,
+        min_gap_seconds=teleportation_min_gap_seconds,
+        min_distance_km=teleportation_min_distance_km,
     )
 
     return going_dark_event, draft_change_event, teleportation_event
@@ -302,25 +302,12 @@ def detect_all_pair_anomalies(
 
 def get_top_teleportation_vessel_visualization_data(
     global_summaries: dict[int, VesselGlobalSummary],
-) -> tuple[int, list[dict[str, int | float]]] | None:
+) -> tuple[int, list[dict[str, int | float | str]]] | None:
     """
-    Find the MMSI with the most Anomaly D (teleportation) events and extract
-    coordinate pairs for map visualization.
+    Find the MMSI with the most anomaly D events and extract coordinate pairs.
 
-    Each teleportation event represents an impossible jump: the same MMSI
-    pings from two locations requiring travel speed > 60 knots, suggesting
-    identity cloning. The output provides origin/destination lat/lon for
-    each such jump.
-
-    Args:
-        global_summaries: Merged vessel summaries keyed by MMSI.
-
-    Returns:
-        None if no vessel has any teleportation events. Otherwise a tuple of:
-        - mmsi: The vessel with the highest teleportation event count.
-        - rows: List of dicts, each with mmsi, event_index, lat_origin,
-          lon_origin, lat_destination, lon_destination (plus implied_speed_knots
-          and distance_km for map tooltips).
+    D1 and D2 are both included in the ranking for visualization, while the
+    subtype is exported per row so the map can distinguish them.
     """
     if not global_summaries:
         return None
@@ -341,13 +328,14 @@ def get_top_teleportation_vessel_visualization_data(
         return None
 
     summary = global_summaries[best_mmsi]
-    rows: list[dict[str, int | float]] = []
+    rows: list[dict[str, int | float | str]] = []
 
     for event_index, event in enumerate(summary.teleportation_events, start=1):
         rows.append(
             {
                 "mmsi": event.mmsi,
                 "event_index": event_index,
+                "subtype": event.subtype,
                 "lat_origin": event.start_latitude,
                 "lon_origin": event.start_longitude,
                 "lat_destination": event.end_latitude,
@@ -366,20 +354,6 @@ def get_top_going_dark_vessel_visualization_data(
     """
     Find the MMSI with the most Anomaly A (going dark) events and extract
     coordinate pairs for map visualization.
-
-    Each going dark event represents an AIS blackout during which the vessel
-    moved at least 1 km, suggesting deliberate AIS deactivation. The output
-    provides origin/destination lat/lon and the gap duration for each event.
-
-    Args:
-        global_summaries: Merged vessel summaries keyed by MMSI.
-
-    Returns:
-        None if no vessel has any going dark events. Otherwise a tuple of:
-        - mmsi: The vessel with the highest going dark event count.
-        - rows: List of dicts, each with mmsi, event_index, lat_origin,
-          lon_origin, lat_destination, lon_destination, gap_hours, and
-          distance_km for visualization and tooltip data.
     """
     if not global_summaries:
         return None
@@ -420,15 +394,11 @@ def get_top_going_dark_vessel_visualization_data(
 
 
 def _validate_same_mmsi(previous: AISRecord, current: AISRecord) -> None:
-    """
-    Validate that two AIS records belong to the same vessel.
-
-    Args:
-        previous: Earlier AIS record.
-        current: Later AIS record.
-
-    Raises:
-        ValueError: If MMSI values differ.
-    """
+    """Validate that two AIS records belong to the same vessel."""
     if previous.mmsi != current.mmsi:
         raise ValueError("AIS records must belong to the same MMSI")
+
+
+def _is_zero_coordinate(latitude: float, longitude: float) -> bool:
+    """Return True for the common placeholder coordinate (0, 0)."""
+    return latitude == 0.0 and longitude == 0.0

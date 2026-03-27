@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 
 
 @dataclass(slots=True, frozen=True)
@@ -66,17 +67,24 @@ class DraftChangeEvent:
     draught_change_ratio: float
 
 
+TeleportationSubtype = Literal["D1", "D2"]
+
+
 @dataclass(slots=True, frozen=True)
 class TeleportationEvent:
     """
-    Detected physically impossible movement for the same MMSI.
+    Detected anomaly D for the same MMSI.
 
-    This event corresponds to anomaly D ("Identity Cloning / Teleportation"):
-    two consecutive AIS messages for the same MMSI imply a travel speed
-    above the configured maximum plausible threshold.
+    The project now splits anomaly D into two deterministic subtypes:
+    - D1: near-simultaneous cloning, where the same MMSI appears in an
+      incompatible location within a short time window;
+    - D2: impossible relocation, where the same MMSI reappears after a
+      longer blackout at a location that still requires impossible speed.
 
     Attributes:
         mmsi: Vessel MMSI identifier.
+        subtype: "D1" for near-simultaneous cloning, "D2" for impossible
+            relocation after blackout.
         start_timestamp: Timestamp of the earlier AIS message.
         end_timestamp: Timestamp of the later AIS message.
         gap_hours: Time difference between the two messages in hours.
@@ -89,6 +97,7 @@ class TeleportationEvent:
     """
 
     mmsi: int
+    subtype: TeleportationSubtype
     start_timestamp: datetime
     end_timestamp: datetime
     gap_hours: float
@@ -98,4 +107,3 @@ class TeleportationEvent:
     end_longitude: float
     distance_km: float
     implied_speed_knots: float
-    

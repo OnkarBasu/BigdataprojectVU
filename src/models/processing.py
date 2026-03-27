@@ -23,11 +23,13 @@ class VesselChunkSummary:
         first_record: First record for this MMSI in the chunk by timestamp.
         last_record: Last record for this MMSI in the chunk by timestamp.
         max_gap_hours: Maximum AIS gap detected inside this chunk for this MMSI.
-        total_impossible_jump_km: Sum of impossible jump distances for anomaly D.
+        total_impossible_jump_km: Sum of D2 impossible-relocation distances.
         draft_change_count: Number of anomaly C events detected in the chunk.
         going_dark_events: Local anomaly A events detected inside the chunk.
         draft_change_events: Local anomaly C events detected inside the chunk.
-        teleportation_events: Local anomaly D events detected inside the chunk.
+        teleportation_events: All local anomaly D events detected inside the chunk.
+        teleportation_d1_events: Local D1 near-simultaneous cloning events.
+        teleportation_d2_events: Local D2 impossible-relocation events.
     """
 
     mmsi: int
@@ -40,6 +42,8 @@ class VesselChunkSummary:
     going_dark_events: list[GoingDarkEvent] = field(default_factory=list)
     draft_change_events: list[DraftChangeEvent] = field(default_factory=list)
     teleportation_events: list[TeleportationEvent] = field(default_factory=list)
+    teleportation_d1_events: list[TeleportationEvent] = field(default_factory=list)
+    teleportation_d2_events: list[TeleportationEvent] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -81,13 +85,15 @@ class VesselGlobalSummary:
             for this vessel across all chunks.
         max_gap_hours: Maximum AIS blackout duration contributing
             to anomaly A ("Going Dark").
-        total_impossible_jump_km: Sum of all impossible distance
-            jumps detected for anomaly D ("Teleportation").
+        total_impossible_jump_km: Sum of D2 impossible-relocation distances
+            contributing to DFSI.
         draft_change_count: Total number of anomaly C events
             (significant draught changes during AIS blackout).
         going_dark_events: All detected anomaly A events for the vessel.
         draft_change_events: All detected anomaly C events for the vessel.
         teleportation_events: All detected anomaly D events for the vessel.
+        teleportation_d1_events: All detected D1 events for the vessel.
+        teleportation_d2_events: All detected D2 events for the vessel.
     """
 
     mmsi: int
@@ -98,3 +104,5 @@ class VesselGlobalSummary:
     going_dark_events: list[GoingDarkEvent] = field(default_factory=list)
     draft_change_events: list[DraftChangeEvent] = field(default_factory=list)
     teleportation_events: list[TeleportationEvent] = field(default_factory=list)
+    teleportation_d1_events: list[TeleportationEvent] = field(default_factory=list)
+    teleportation_d2_events: list[TeleportationEvent] = field(default_factory=list)

@@ -107,3 +107,53 @@ class TeleportationEvent:
     end_longitude: float
     distance_km: float
     implied_speed_knots: float
+
+
+@dataclass(slots=True, frozen=True)
+class LoiteringTransferEvent:
+    """
+    Detected anomaly B ("Loitering & Transfers") between two vessels.
+
+    Two distinct MMSI remain within a small distance while moving slowly
+    for a prolonged period of time away from ports.
+
+    Attributes:
+        mmsi_a: First vessel MMSI.
+        mmsi_b: Second vessel MMSI.
+        start_timestamp: Start of co-location period.
+        end_timestamp: End of co-location period.
+        duration_hours: Total duration of the event.
+
+        start_lat_a: Start latitude of vessel A.
+        start_lon_a: Start longitude of vessel A.
+        start_lat_b: Start latitude of vessel B.
+        start_lon_b: Start longitude of vessel B.
+
+        end_lat_a: End latitude of vessel A.
+        end_lon_a: End longitude of vessel A.
+        end_lat_b: End latitude of vessel B.
+        end_lon_b: End longitude of vessel B.
+
+        min_distance_km: Minimum distance observed during event.
+        avg_distance_km: Average distance during event.
+    """
+
+    mmsi_a: int
+    mmsi_b: int
+
+    start_timestamp: datetime
+    end_timestamp: datetime
+    duration_hours: float
+
+    start_lat_a: float
+    start_lon_a: float
+    start_lat_b: float
+    start_lon_b: float
+
+    end_lat_a: float
+    end_lon_a: float
+    end_lat_b: float
+    end_lon_b: float
+
+    min_distance_km: float
+    avg_distance_km: float

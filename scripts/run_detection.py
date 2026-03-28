@@ -10,7 +10,6 @@ from src.anomaly_detection import (
     calculate_all_dfsi,
     create_merge_state,
     get_top_going_dark_vessel_visualization_data,
-    get_top_teleportation_vessel_visualization_data,
     merge_chunk_result_into_state,
 )
 from src.anomaly_detection.rules import (
@@ -19,12 +18,8 @@ from src.anomaly_detection.rules import (
     get_top_teleportation_d2_vessel_visualization_data
 )
 from src.parallel import process_chunk, worker_init
-from src.performance import (
-    MemorySample,
-    collect_memory_sample,
-    get_current_process,
-    get_rss_mb,
-)
+from src.performance import get_current_process, get_rss_mb
+from src.performance.memory_profile import MemoryMonitor
 from src.streaming import stream_csv_files_in_chunks
 from src.models import ChunkProcessingResult
 from src.models.events import LoiteringTransferEvent
@@ -165,46 +160,6 @@ def write_results_csv(
                     len(summary.teleportation_d1_events),
                     len(summary.teleportation_d2_events),
                     len(summary.loitering_transfer_events),
-                ]
-            )
-
-
-def write_memory_samples_csv(
-    output_file: Path,
-    memory_samples: list[MemorySample],
-) -> None:
-    """
-    Write collected memory usage samples to a CSV file.
-
-    Args:
-        output_file: Path to the output CSV file.
-        memory_samples: Collected memory samples during pipeline execution.
-    """
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    with output_file.open("w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.writer(csvfile)
-
-        writer.writerow(
-            [
-                "elapsed_time_sec",
-                "completed_chunks",
-                "processed_valid_records",
-                "main_rss_mb",
-                "workers_rss_mb",
-                "total_rss_mb",
-            ]
-        )
-
-        for sample in memory_samples:
-            writer.writerow(
-                [
-                    f"{sample.elapsed_time_sec:.6f}",
-                    sample.completed_chunks,
-                    sample.processed_valid_records,
-                    f"{sample.main_rss_mb:.3f}",
-                    f"{sample.workers_rss_mb:.3f}",
-                    f"{sample.total_rss_mb:.3f}",
                 ]
             )
 
@@ -434,8 +389,6 @@ def merge_ready_results(
     port_zones,
     processed_valid_records: int,
     completed_chunks: int,
-    memory_samples: list[MemorySample],
-    start_time: float,
     process,
 ) -> tuple[int, int, int]:
     """
@@ -451,8 +404,6 @@ def merge_ready_results(
         port_zones: Loaded port zones used for boundary anomaly checks.
         processed_valid_records: Accumulated count of valid records merged so far.
         completed_chunks: Number of merged chunks so far.
-        memory_samples: Output list for collected memory samples.
-        start_time: Pipeline start time.
         process: Current main process handle.
 
     Returns:
@@ -473,14 +424,6 @@ def merge_ready_results(
         processed_valid_records += chunk_result.valid_record_count
         completed_chunks += 1
 
-        sample = collect_memory_sample(
-            start_time=start_time,
-            completed_chunks=completed_chunks,
-            processed_valid_records=processed_valid_records,
-            process=process,
-        )
-        memory_samples.append(sample)
-
         print(
             f"Chunk {chunk_result.chunk_id} processed in "
             f"{chunk_result.elapsed_time:.4f} sec | "
@@ -488,9 +431,7 @@ def merge_ready_results(
             f"Valid records in chunk: {chunk_result.valid_record_count} | "
             f"Processed valid records: {processed_valid_records} | "
             f"Completed chunks: {completed_chunks} | "
-            f"Main RSS: {sample.main_rss_mb:.2f} MB | "
-            f"Workers RSS: {sample.workers_rss_mb:.2f} MB | "
-            f"Total RSS: {sample.total_rss_mb:.2f} MB"
+            f"Main RSS: {get_rss_mb(process):.2f} MB"
         )
 
         next_chunk_id_to_merge += 1
@@ -530,7 +471,18 @@ def main() -> None:
 
     start_time = time.perf_counter()
     process = get_current_process()
-    memory_samples: list[MemorySample] = []
+
+    completed_chunks = 0
+    processed_valid_records = 0
+
+    def get_progress() -> tuple[int, int]:
+        return completed_chunks, processed_valid_records
+
+    memory_monitor = MemoryMonitor(
+        sampling_interval_sec=0.25,
+        progress_callback=get_progress,
+        track_per_worker=True,
+    )
 
     print("=" * 80)
     print("SHADOW FLEET DETECTION")
@@ -546,8 +498,6 @@ def main() -> None:
     )
     print("=" * 80)
 
-    processed_valid_records = 0
-    completed_chunks = 0
     merge_state = create_merge_state()
     port_zones = load_port_zones()
 
@@ -560,9 +510,13 @@ def main() -> None:
     pending_results: dict[int, ChunkProcessingResult] = {}
     next_chunk_id_to_merge = 1
 
+    memory_monitor.start()
+    memory_monitor.take_sample(event_label="pipeline_started")
+
     with Pool(processes=workers, initializer=worker_init) as pool:
         for chunk_result in pool.imap_unordered(process_chunk, tasks, chunksize=1):
             pending_results[chunk_result.chunk_id] = chunk_result
+            memory_monitor.take_sample(event_label="worker_result_received")
 
             (
                 next_chunk_id_to_merge,
@@ -575,10 +529,9 @@ def main() -> None:
                 port_zones=port_zones,
                 processed_valid_records=processed_valid_records,
                 completed_chunks=completed_chunks,
-                memory_samples=memory_samples,
-                start_time=start_time,
                 process=process,
             )
+            memory_monitor.take_sample(event_label="after_merge")
 
     (
         next_chunk_id_to_merge,
@@ -591,10 +544,9 @@ def main() -> None:
         port_zones=port_zones,
         processed_valid_records=processed_valid_records,
         completed_chunks=completed_chunks,
-        memory_samples=memory_samples,
-        start_time=start_time,
         process=process,
     )
+    memory_monitor.take_sample(event_label="after_final_merge")
 
     if pending_results:
         missing = sorted(pending_results)
@@ -619,8 +571,18 @@ def main() -> None:
     write_results_csv(output_file, ranked_scores, global_summaries)
     print(f"\nResults written to: {output_file}")
 
-    write_memory_samples_csv(memory_output_file, memory_samples)
+    memory_monitor.take_sample(event_label="before_final_save")
+    memory_monitor.stop()
+
+    memory_monitor.save_aggregated_csv(memory_output_file)
+    worker_memory_output_file = memory_output_file.with_name("worker_memory_profile.csv")
+    memory_summary_output_file = memory_output_file.with_name("memory_summary.csv")
+    memory_monitor.save_worker_csv(worker_memory_output_file)
+    memory_monitor.save_summary_csv(memory_summary_output_file)
+
     print(f"Memory profile written to: {memory_output_file}")
+    print(f"Worker memory profile written to: {worker_memory_output_file}")
+    print(f"Memory summary written to: {memory_summary_output_file}")
 
     # D1
     viz_d1 = get_top_teleportation_d1_vessel_visualization_data(global_summaries)
@@ -683,10 +645,11 @@ def main() -> None:
 
     total_time = time.perf_counter() - start_time
     final_memory_rss_mb = get_rss_mb(process)
+    memory_summary = memory_monitor.build_summary()
 
-    peak_main_rss_mb = max((sample.main_rss_mb for sample in memory_samples), default=0.0)
-    peak_workers_rss_mb = max((sample.workers_rss_mb for sample in memory_samples), default=0.0)
-    peak_total_rss_mb = max((sample.total_rss_mb for sample in memory_samples), default=0.0)
+    peak_main_rss_mb = memory_summary.peak_main_rss_mb
+    peak_workers_rss_mb = memory_summary.peak_workers_rss_mb
+    peak_total_rss_mb = memory_summary.peak_total_rss_mb
 
     print("\n" + "=" * 80)
     print("RESULT SUMMARY")

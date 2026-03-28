@@ -92,6 +92,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Path to output CSV of top Anomaly A vessel coordinates for map visualization.",
     )
     parser.add_argument(
+        "--enable-loitering-detection",
+        action="store_true",
+        help="Enable anomaly B (loitering & transfers) detection step",
+    )
+    parser.add_argument(
         "--loitering-viz-output",
         type=Path,
         default=Path("data/output/top_loitering_vessel_map.csv"),
@@ -502,6 +507,7 @@ def main() -> None:
     teleportation_viz_output: Path = args.teleportation_viz_output
     going_dark_viz_output: Path = args.going_dark_viz_output
     loitering_viz_output: Path = args.loitering_viz_output
+    enable_loitering_detection: bool = args.enable_loitering_detection
 
     if chunk_size <= 0:
         raise ValueError("chunk_size must be greater than 0")
@@ -525,6 +531,10 @@ def main() -> None:
         print(f"  - {input_file}")
     print(f"Chunk size: {chunk_size}")
     print(f"Workers:    {workers}")
+    print(
+        "Loitering detection: "
+        f"{'enabled' if enable_loitering_detection else 'disabled (performance mode)'}"
+    )
     print("=" * 80)
 
     processed_valid_records = 0
@@ -583,11 +593,11 @@ def main() -> None:
 
     global_summaries = merge_state.global_summaries
 
-    loitering_events = detect_loitering_transfers(
-        global_summaries=global_summaries,
-        port_zones=port_zones,
-    )
-    attach_loitering_events_to_summaries(global_summaries, loitering_events)
+    if enable_loitering_detection:
+        loitering_events = detect_loitering_transfers(global_summaries, port_zones)
+        attach_loitering_events_to_summaries(global_summaries, loitering_events)
+    else:
+        loitering_events = []
 
     dfsi_scores = calculate_all_dfsi(global_summaries)
 
@@ -633,21 +643,26 @@ def main() -> None:
             "No going dark events detected; skipping top vessel map output."
         )
 
-    loitering_viz_data = get_top_loitering_vessel_visualization_data(global_summaries)
-    if loitering_viz_data is not None:
-        top_loitering_mmsi, loitering_viz_rows = loitering_viz_data
-        write_loitering_visualization_csv(
-            loitering_viz_output,
-            top_loitering_mmsi,
-            loitering_viz_rows,
-        )
-        print(
-            f"Top Anomaly B vessel (MMSI={top_loitering_mmsi}) map data written to: "
-            f"{loitering_viz_output}"
-        )
+    if enable_loitering_detection:
+        loitering_viz_data = get_top_loitering_vessel_visualization_data(global_summaries)
+        if loitering_viz_data is not None:
+            top_loitering_mmsi, loitering_viz_rows = loitering_viz_data
+            write_loitering_visualization_csv(
+                loitering_viz_output,
+                top_loitering_mmsi,
+                loitering_viz_rows,
+            )
+            print(
+                f"Top Anomaly B vessel (MMSI={top_loitering_mmsi}) map data written to: "
+                f"{loitering_viz_output}"
+            )
+        else:
+            print(
+                "No loitering-transfer events detected; skipping top vessel map output."
+            )
     else:
         print(
-            "No loitering-transfer events detected; skipping top vessel map output."
+            "Loitering-transfer detection disabled; skipping anomaly B final step."
         )
 
     total_time = time.perf_counter() - start_time

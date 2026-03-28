@@ -1,5 +1,8 @@
 from .memory_profile import (
+    MemoryMonitor,
     MemorySample,
+    MemorySummary,
+    WorkerMemorySample,
     collect_memory_sample,
     get_children_rss_mb,
     get_current_process,
@@ -8,7 +11,10 @@ from .memory_profile import (
 )
 
 __all__ = [
+    "MemoryMonitor",
     "MemorySample",
+    "MemorySummary",
+    "WorkerMemorySample",
     "get_current_process",
     "get_rss_mb",
     "get_children_rss_mb",

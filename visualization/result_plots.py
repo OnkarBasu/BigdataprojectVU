@@ -14,7 +14,7 @@ import folium
 import pandas as pd
 
 DEFAULT_CSV_PATH = Path("data/output/top_teleportation_vessel_map.csv")
-DEFAULT_OUTPUT_PATH = Path("visualization/teleportation_map.html")
+DEFAULT_OUTPUT_PATH = Path("visualization/output/teleportation_map.html")
 
 D1_ORIGIN_COLOR = "#2ca02c"
 D1_DESTINATION_COLOR = "#d62728"

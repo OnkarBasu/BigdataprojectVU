@@ -74,8 +74,16 @@ flowchart TD
         W[Compute DFSI]
         X[Rank vessels]
         Y[Write dfsi_results.csv]
-        Z[Write memory_profile.csv]
-        AA[Write visualization CSV files]
+        Z[Write visualization CSV files]
+    end
+
+    subgraph PERF[Performance monitoring]
+        PM1[Start MemoryMonitor]
+        PM2[Periodic RAM sampling]
+        PM3[Track main and worker RSS]
+        PM4[Write memory_profile.csv]
+        PM5[Write worker_memory_profile.csv]
+        PM6[Write memory_summary.csv]
     end
 
     A --> B --> C --> D --> E
@@ -102,20 +110,33 @@ flowchart TD
     T -->|No| W
     W --> X --> Y
     X --> Z
-    X --> AA
+
+    MP1 -.-> PM1
+    WP -.-> PM2
+    MP2 -.-> PM2
+    FP -.-> PM4
+    PM1 --> PM2 --> PM3
+    PM3 --> PM4
+    PM3 --> PM5
+    PM3 --> PM6
 
     classDef main fill:#e3f2fd,stroke:#1e88e5,stroke-width:2px;
     classDef worker fill:#e8f5e9,stroke:#43a047,stroke-width:2px;
     classDef final fill:#fff3e0,stroke:#fb8c00,stroke-width:2px;
+    classDef perf fill:#f3e5f5,stroke:#8e24aa,stroke-width:2px;
 
     class MP1,MP2 main;
     class WP worker;
     class FP final;
+    class PERF perf;
 ```
 
 - The main process performs CSV streaming, chunk creation, ordered merge, and final aggregation.
 - Worker processes handle per chunk parsing, validation, grouping, and local anomaly detection.
 - Cross chunk anomaly detection is performed during incremental merge in the main process.
+- A lightweight memory profiler runs alongside the pipeline:
+  - periodically samples RAM usage of the main and worker processes
+  - produces aggregated and per-worker memory profiles for performance analysis
 
 ### Pipeline explanation
 
@@ -147,6 +168,98 @@ The pipeline is designed as a **streaming + multiprocessing system**:
 - Final stage:
   - DFSI (Dark Fleet Suspicion Index) is computed per vessel
   - results and visualization datasets are exported
+
+---
+
+## Performance profiling
+
+The system includes a built-in lightweight memory profiler designed for performance analysis and benchmarking.
+
+### Key features
+
+- Runs **in parallel with the pipeline** (non-intrusive)
+- Uses **periodic time-based sampling** (not chunk-based logging)
+- Tracks:
+  - main process RSS memory
+  - total worker processes memory
+  - per-worker memory usage (by PID)
+- Supports optional event-based samples at key pipeline stages
+
+### Output files
+
+- `memory_profile.csv`  
+  Aggregated memory usage over time:
+  - main RSS
+  - workers RSS
+  - total RSS
+  - pipeline progress (chunks, records)
+
+- `worker_memory_profile.csv`  
+  Detailed per-worker memory usage:
+  - RSS per process (PID)
+  - useful for load balancing and debugging
+
+- `memory_summary.csv`  
+  Final summary:
+  - peak memory (main / workers / total)
+  - peak single worker memory
+  - total runtime and sampling statistics
+
+### Design rationale
+
+The profiler is implemented as a **monitoring layer**, not as part of the data pipeline itself.
+
+- avoids distortion of pipeline logic
+- minimizes overhead using low-frequency sampling (~0.25–0.5 sec)
+- captures transient memory peaks more accurately than chunk-based logging
+
+This approach enables reliable performance analysis while keeping the system scalable.
+
+---
+
+## Performance benchmarking
+
+The pipeline is evaluated under different configurations to analyze scalability and performance trade-offs.
+
+### Benchmark parameters
+
+- number of workers (parallel processes)
+- chunk size (streaming granularity)
+
+### Metrics
+
+- total execution time
+- peak memory usage
+- throughput (records per second)
+
+### Speedup calculation
+
+Speedup is computed relative to the single-worker baseline:  
+`S(n) = T(1) / T(n)`  
+where:  
+- `T(1)` — execution time with 1 worker
+- `T(n)` — execution time with n workers
+
+### Amdahl’s Law analysis
+
+The theoretical speedup is modeled using Amdahl’s Law:  
+`S(n) = 1 / ((1 - P) + P / n)`  
+where:  
+- `P` — parallelizable fraction of the pipeline
+
+The observed speedup is compared against the theoretical curve to identify bottlenecks.
+
+### Interpretation
+
+Differences between theoretical and actual speedup are explained by:
+
+- I/O constraints during CSV streaming
+- inter-process communication overhead
+- ordered merge in the main process (sequential bottleneck)
+- process scheduling and memory effects
+
+This analysis provides insight into the scalability limits of the system.
+
 
 ---
 
@@ -182,7 +295,9 @@ The pipeline is designed as a **streaming + multiprocessing system**:
 ## Output files
 
 - dfsi_results.csv — final ranking of vessels  
-- memory_profile.csv — memory usage over time  
+- memory_profile.csv — time-based aggregated RAM profile  
+- worker_memory_profile.csv — per-worker RAM usage over time  
+- memory_summary.csv — peak memory usage and profiling summary  
 - visualization datasets for anomalies A, B, D  
 
 ---

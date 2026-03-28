@@ -17,7 +17,7 @@ WORKFLOW:
 1. Scans pipeline_results/ for completed benchmark runs
 2. Generates memory timeline plots for each configuration
 3. Generates comparison plots across all configurations
-4. Saves all PNG plots in pipeline_results/additional_report/ folder
+4. Saves all PNG plots in visualization/output/ folder
 
 RUNNING BENCHMARKS:
 ===================
@@ -147,7 +147,7 @@ def check_and_run_benchmarks(results_dir: str = "pipeline_results") -> bool:
 
 def run_all_plots(
     results_dir: str = "pipeline_results",
-    output_dir: str = "pipeline_results/additional_report",
+    output_dir: str = "visualization/output",
     auto_benchmark: bool = True,
 ) -> None:
     """Generate benchmark visualization plots from existing results."""
@@ -233,8 +233,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output-dir",
-        default="pipeline_results/additional_report",
-        help="Directory to save plots (default: pipeline_results/additional_report/)",
+        default="visualization/output",
+        help="Directory to save plots (default: visualization/output/)",
     )
     args = parser.parse_args()
 

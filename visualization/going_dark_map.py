@@ -108,7 +108,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("visualization/going_dark_map.html"),
+        default=Path("visualization/output/going_dark_map.html"),
     )
 
     args = parser.parse_args()

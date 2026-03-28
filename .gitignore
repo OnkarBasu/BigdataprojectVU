@@ -211,4 +211,8 @@ marimo/_lsp/
 __marimo__/
 
 # Outputs
-data/output/
+data/output/*
+!data/output/.gitkeep
+
+visualization/output/*
+!visualization/output/.gitkeep

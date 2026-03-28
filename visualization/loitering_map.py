@@ -14,7 +14,7 @@ import folium
 import pandas as pd
 
 DEFAULT_CSV_PATH = Path("data/output/top_loitering_vessel_map.csv")
-DEFAULT_OUTPUT_PATH = Path("visualization/loitering_map.html")
+DEFAULT_OUTPUT_PATH = Path("visualization/output/loitering_map.html")
 
 VESSEL_A_COLOR = "#1f77b4"
 VESSEL_B_COLOR = "#d62728"

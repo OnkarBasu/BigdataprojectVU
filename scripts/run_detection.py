@@ -13,7 +13,11 @@ from src.anomaly_detection import (
     get_top_teleportation_vessel_visualization_data,
     merge_chunk_result_into_state,
 )
-from src.anomaly_detection.rules import detect_loitering_transfers
+from src.anomaly_detection.rules import (
+    detect_loitering_transfers,
+    get_top_teleportation_d1_vessel_visualization_data,
+    get_top_teleportation_d2_vessel_visualization_data
+)
 from src.parallel import process_chunk, worker_init
 from src.performance import (
     MemorySample,
@@ -80,10 +84,14 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Path to output memory profile CSV file.",
     )
     parser.add_argument(
-        "--teleportation-viz-output",
+        "--teleportation-d1-viz-output",
         type=Path,
-        default=Path("data/output/top_teleportation_vessel_map.csv"),
-        help="Path to output CSV of top Anomaly D vessel coordinates for map visualization.",
+        default=Path("data/output/top_teleportation_d1_vessel_map.csv"),
+    )
+    parser.add_argument(
+        "--teleportation-d2-viz-output",
+        type=Path,
+        default=Path("data/output/top_teleportation_d2_vessel_map.csv"),
     )
     parser.add_argument(
         "--going-dark-viz-output",
@@ -504,7 +512,8 @@ def main() -> None:
     top_n: int = args.top
     output_file: Path = args.output
     memory_output_file: Path = args.memory_output
-    teleportation_viz_output: Path = args.teleportation_viz_output
+    teleportation_d1_viz_output: Path = args.teleportation_d1_viz_output
+    teleportation_d2_viz_output: Path = args.teleportation_d2_viz_output
     going_dark_viz_output: Path = args.going_dark_viz_output
     loitering_viz_output: Path = args.loitering_viz_output
     enable_loitering_detection: bool = args.enable_loitering_detection
@@ -613,20 +622,27 @@ def main() -> None:
     write_memory_samples_csv(memory_output_file, memory_samples)
     print(f"Memory profile written to: {memory_output_file}")
 
-    viz_data = get_top_teleportation_vessel_visualization_data(global_summaries)
-    if viz_data is not None:
-        top_mmsi, viz_rows = viz_data
+    # D1
+    viz_d1 = get_top_teleportation_d1_vessel_visualization_data(global_summaries)
+    if viz_d1 is not None:
+        mmsi, rows = viz_d1
         write_teleportation_visualization_csv(
-            teleportation_viz_output, top_mmsi, viz_rows
+            teleportation_d1_viz_output, mmsi, rows
         )
-        print(
-            f"Top Anomaly D vessel (MMSI={top_mmsi}) map data written to: "
-            f"{teleportation_viz_output}"
-        )
+        print(f"Top D1 vessel (MMSI={mmsi}) written to {teleportation_d1_viz_output}")
     else:
-        print(
-            "No teleportation events detected; skipping top vessel map output."
+        print("No D1 events detected")
+
+    # D2
+    viz_d2 = get_top_teleportation_d2_vessel_visualization_data(global_summaries)
+    if viz_d2 is not None:
+        mmsi, rows = viz_d2
+        write_teleportation_visualization_csv(
+            teleportation_d2_viz_output, mmsi, rows
         )
+        print(f"Top D2 vessel (MMSI={mmsi}) written to {teleportation_d2_viz_output}")
+    else:
+        print("No D2 events detected")
 
     going_dark_viz_data = get_top_going_dark_vessel_visualization_data(global_summaries)
     if going_dark_viz_data is not None:

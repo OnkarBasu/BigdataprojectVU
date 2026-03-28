@@ -688,3 +688,73 @@ def _validate_same_mmsi(previous: AISRecord, current: AISRecord) -> None:
 def _is_zero_coordinate(latitude: float, longitude: float) -> bool:
     """Return True for the common placeholder coordinate (0, 0)."""
     return latitude == 0.0 and longitude == 0.0
+
+
+def get_top_teleportation_d1_vessel_visualization_data(global_summaries):
+    best_mmsi = None
+    best_count = 0
+
+    for mmsi, summary in global_summaries.items():
+        count = len(summary.teleportation_d1_events)
+        if count > best_count:
+            best_count = count
+            best_mmsi = mmsi
+        elif count == best_count and count > 0 and best_mmsi is not None:
+            if mmsi < best_mmsi:
+                best_mmsi = mmsi
+
+    if best_mmsi is None or best_count == 0:
+        return None
+
+    summary = global_summaries[best_mmsi]
+
+    rows = []
+    for i, event in enumerate(summary.teleportation_d1_events, start=1):
+        rows.append({
+            "mmsi": event.mmsi,
+            "event_index": i,
+            "subtype": "D1",
+            "lat_origin": event.start_latitude,
+            "lon_origin": event.start_longitude,
+            "lat_destination": event.end_latitude,
+            "lon_destination": event.end_longitude,
+            "implied_speed_knots": event.implied_speed_knots,
+            "distance_km": event.distance_km,
+        })
+
+    return best_mmsi, rows
+
+
+def get_top_teleportation_d2_vessel_visualization_data(global_summaries):
+    best_mmsi = None
+    best_count = 0
+
+    for mmsi, summary in global_summaries.items():
+        count = len(summary.teleportation_d2_events)
+        if count > best_count:
+            best_count = count
+            best_mmsi = mmsi
+        elif count == best_count and count > 0 and best_mmsi is not None:
+            if mmsi < best_mmsi:
+                best_mmsi = mmsi
+
+    if best_mmsi is None or best_count == 0:
+        return None
+
+    summary = global_summaries[best_mmsi]
+
+    rows = []
+    for i, event in enumerate(summary.teleportation_d2_events, start=1):
+        rows.append({
+            "mmsi": event.mmsi,
+            "event_index": i,
+            "subtype": "D2",
+            "lat_origin": event.start_latitude,
+            "lon_origin": event.start_longitude,
+            "lat_destination": event.end_latitude,
+            "lon_destination": event.end_longitude,
+            "implied_speed_knots": event.implied_speed_knots,
+            "distance_km": event.distance_km,
+        })
+
+    return best_mmsi, rows

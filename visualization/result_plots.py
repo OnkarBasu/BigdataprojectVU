@@ -1,8 +1,8 @@
 """
-Visualize teleportation (Anomaly D) events on a world map.
+Visualize anomaly D events on a world map.
 
 Loads top_teleportation_vessel_map.csv and plots origin/destination points
-with connecting lines. Origin = green, Destination = red.
+with connecting lines. D1 and D2 subtypes are distinguished visually.
 """
 
 from __future__ import annotations
@@ -10,34 +10,26 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import pandas as pd
 import folium
+import pandas as pd
 
 DEFAULT_CSV_PATH = Path("data/output/top_teleportation_vessel_map.csv")
 DEFAULT_OUTPUT_PATH = Path("visualization/teleportation_map.html")
 
-ORIGIN_COLOR = "#2ca02c"
-DESTINATION_COLOR = "#d62728"
-LINE_COLOR = "#1f77b4"
+D1_ORIGIN_COLOR = "#2ca02c"
+D1_DESTINATION_COLOR = "#d62728"
+D1_LINE_COLOR = "#1f77b4"
+
+D2_ORIGIN_COLOR = "#17becf"
+D2_DESTINATION_COLOR = "#ff7f0e"
+D2_LINE_COLOR = "#9467bd"
+
 LINE_WEIGHT = 4
 MARKER_RADIUS = 10
 
 
 def load_teleportation_data(csv_path: Path) -> pd.DataFrame:
-    """
-    Load teleportation events from CSV.
-
-    Args:
-        csv_path: Path to top_teleportation_vessel_map.csv.
-
-    Returns:
-        DataFrame with lat_origin, lon_origin, lat_destination, lon_destination,
-        and optional event_index, implied_speed_knots, distance_km.
-
-    Raises:
-        FileNotFoundError: If CSV does not exist.
-        ValueError: If required columns are missing.
-    """
+    """Load anomaly D events from CSV."""
     if not csv_path.exists():
         raise FileNotFoundError(f"CSV file not found: {csv_path}")
 
@@ -48,21 +40,41 @@ def load_teleportation_data(csv_path: Path) -> pd.DataFrame:
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
 
+    if "subtype" not in df.columns:
+        df["subtype"] = "D"
+
     return df
+
+
+def _style_for_subtype(subtype: str) -> tuple[str, str, str, str]:
+    subtype_normalized = str(subtype).strip().upper()
+    if subtype_normalized == "D1":
+        return (
+            D1_ORIGIN_COLOR,
+            D1_DESTINATION_COLOR,
+            D1_LINE_COLOR,
+            "D1 — Near-simultaneous cloning",
+        )
+    if subtype_normalized == "D2":
+        return (
+            D2_ORIGIN_COLOR,
+            D2_DESTINATION_COLOR,
+            D2_LINE_COLOR,
+            "D2 — Impossible relocation",
+        )
+    return (
+        D1_ORIGIN_COLOR,
+        D1_DESTINATION_COLOR,
+        D1_LINE_COLOR,
+        "D — Teleportation",
+    )
 
 
 def create_teleportation_map(
     df: pd.DataFrame,
     output_path: Path,
 ) -> None:
-    """
-    Create an interactive world map with teleportation origin/destination points
-    and connecting lines.
-
-    Args:
-        df: DataFrame from load_teleportation_data().
-        output_path: Path to save the HTML map.
-    """
+    """Create an interactive world map with anomaly D origin/destination points."""
     if df.empty:
         return
 
@@ -105,35 +117,43 @@ def create_teleportation_map(
         speed = row.get("implied_speed_knots", pd.NA)
         dist_km = row.get("distance_km", pd.NA)
         mmsi = row.get("mmsi", pd.NA)
+        subtype = row.get("subtype", "D")
 
-        extra = []
+        origin_color, dest_color, line_color, subtype_label = _style_for_subtype(subtype)
+
+        extra = [f"Type: {subtype_label}"]
         if pd.notna(speed):
             extra.append(f"Implied speed: {float(speed):.1f} knots")
         if pd.notna(dist_km):
             extra.append(f"Distance: {float(dist_km):.2f} km")
         if pd.notna(mmsi):
             extra.append(f"MMSI: {mmsi}")
-        extra_str = " | ".join(extra) if extra else ""
+        extra_str = " | ".join(extra)
 
-        origin_text = f"<b>Origin</b> (Event {event_idx})<br>" + (f"{extra_str}<br>" if extra_str else "")
-        dest_text = f"<b>Destination</b> (Event {event_idx})<br>" + (f"{extra_str}<br>" if extra_str else "")
-        line_text = f"<b>Event {event_idx}</b><br>Origin → Destination<br>" + (extra_str if extra_str else "")
+        origin_text = (
+            f"<b>{subtype_label}</b> — Origin (Event {event_idx})<br>"
+            + f"{extra_str}<br>"
+        )
+        dest_text = (
+            f"<b>{subtype_label}</b> — Destination (Event {event_idx})<br>"
+            + f"{extra_str}<br>"
+        )
+        line_text = (
+            f"<b>{subtype_label} — Event {event_idx}</b><br>Origin → Destination<br>"
+            + extra_str
+        )
 
         origin_marker = folium.CircleMarker(
             location=[lat_orig, lon_orig],
             radius=MARKER_RADIUS,
             color="black",
             fill=True,
-            fill_color=ORIGIN_COLOR,
+            fill_color=origin_color,
             fill_opacity=1.0,
             weight=2,
         )
-        origin_marker.add_child(
-            folium.Tooltip(origin_text, sticky=True, permanent=False)
-        )
-        origin_marker.add_child(
-            folium.Popup(origin_text, max_width=300)
-        )
+        origin_marker.add_child(folium.Tooltip(origin_text, sticky=True, permanent=False))
+        origin_marker.add_child(folium.Popup(origin_text, max_width=320))
         origin_marker.add_to(m)
 
         dest_marker = folium.CircleMarker(
@@ -141,30 +161,22 @@ def create_teleportation_map(
             radius=MARKER_RADIUS,
             color="black",
             fill=True,
-            fill_color=DESTINATION_COLOR,
+            fill_color=dest_color,
             fill_opacity=1.0,
             weight=2,
         )
-        dest_marker.add_child(
-            folium.Tooltip(dest_text, sticky=True, permanent=False)
-        )
-        dest_marker.add_child(
-            folium.Popup(dest_text, max_width=300)
-        )
+        dest_marker.add_child(folium.Tooltip(dest_text, sticky=True, permanent=False))
+        dest_marker.add_child(folium.Popup(dest_text, max_width=320))
         dest_marker.add_to(m)
 
         line = folium.PolyLine(
             locations=[[lat_orig, lon_orig], [lat_dest, lon_dest]],
-            color=LINE_COLOR,
+            color=line_color,
             weight=LINE_WEIGHT,
             opacity=0.8,
         )
-        line.add_child(
-            folium.Tooltip(line_text, sticky=True, permanent=False)
-        )
-        line.add_child(
-            folium.Popup(line_text, max_width=300)
-        )
+        line.add_child(folium.Tooltip(line_text, sticky=True, permanent=False))
+        line.add_child(folium.Popup(line_text, max_width=320))
         line.add_to(m)
 
     m.fit_bounds(bounds, padding=[30, 30])
@@ -179,7 +191,7 @@ def create_teleportation_map(
         border: 2px solid #333 !important;
         border-radius: 4px !important;
         box-shadow: 2px 2px 6px rgba(0,0,0,0.3) !important;
-        max-width: 320px !important;
+        max-width: 340px !important;
     }
     </style>
     """
@@ -198,14 +210,12 @@ def create_teleportation_map(
         font-family: Arial;
         font-size: 14px;
     ">
-        <p style="margin: 0 0 5px 0;"><b>Anomaly D (Teleportation)</b></p>
-        <p style="margin: 0 0 3px 0;">
-            <span style="color: {ORIGIN_COLOR}; font-weight: bold;">●</span> Origin
-        </p>
-        <p style="margin: 0 0 3px 0;">
-            <span style="color: {DESTINATION_COLOR}; font-weight: bold;">●</span> Destination
-        </p>
-        <p style="margin: 5px 0 0 0; font-size: 12px;">Lines = impossible jumps</p>
+        <p style="margin: 0 0 5px 0;"><b>Anomaly D</b></p>
+        <p style="margin: 0 0 3px 0;"><span style="color: {D1_ORIGIN_COLOR}; font-weight: bold;">●</span> D1 origin</p>
+        <p style="margin: 0 0 3px 0;"><span style="color: {D1_DESTINATION_COLOR}; font-weight: bold;">●</span> D1 destination</p>
+        <p style="margin: 0 0 3px 0;"><span style="color: {D2_ORIGIN_COLOR}; font-weight: bold;">●</span> D2 origin</p>
+        <p style="margin: 0 0 3px 0;"><span style="color: {D2_DESTINATION_COLOR}; font-weight: bold;">●</span> D2 destination</p>
+        <p style="margin: 5px 0 0 0; font-size: 12px;">Lines = anomaly D transitions</p>
     </div>
     """
     m.get_root().html.add_child(folium.Element(legend_html))
@@ -215,9 +225,9 @@ def create_teleportation_map(
 
 
 def main() -> None:
-    """Run the teleportation map visualization."""
+    """Run the anomaly D map visualization."""
     parser = argparse.ArgumentParser(
-        description="Plot top Anomaly D vessel teleportation events on a world map.",
+        description="Plot top anomaly D vessel events on a world map.",
     )
     parser.add_argument(
         "--input",
@@ -236,12 +246,12 @@ def main() -> None:
     df = load_teleportation_data(args.input)
 
     if df.empty:
-        print("No teleportation events to plot. CSV is empty.")
+        print("No anomaly D events to plot. CSV is empty.")
         return
 
     create_teleportation_map(df, args.output)
     print(f"Map saved to: {args.output}")
-    print(f"Open in a browser to view {len(df)} teleportation event(s).")
+    print(f"Open in a browser to view {len(df)} anomaly D event(s).")
 
 
 if __name__ == "__main__":

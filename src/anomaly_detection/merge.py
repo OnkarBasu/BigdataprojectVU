@@ -1,10 +1,28 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Sequence
 
 from src.anomaly_detection import detect_all_pair_anomalies
+from src.anomaly_detection.rules import (
+    DEFAULT_B_BUCKET_SECONDS,
+    DEFAULT_B_MAX_CONTINUATION_GAP_SECONDS,
+    DEFAULT_B_MAX_DISTANCE_KM,
+    DEFAULT_B_MAX_SOG_KNOTS,
+    DEFAULT_B_MIN_DURATION_HOURS,
+    _ActiveLoiteringPair,
+    _LoiteringPoint,
+    _bucketize_timestamp,
+    _find_close_pairs_in_bucket,
+    _finalize_active_loitering_pair,
+    _record_to_loitering_point,
+    _start_active_loitering_pair,
+    _update_active_loitering_pair,
+)
 from src.models import AISRecord, ChunkProcessingResult, VesselChunkSummary
+from src.models.events import LoiteringTransferEvent
 from src.models.processing import VesselGlobalSummary
 from src.utils.ports import PortZone
 
@@ -24,6 +42,25 @@ class BoundaryState:
     last_sampled_record: AISRecord | None
 
 
+
+
+@dataclass(slots=True)
+class LoiteringState:
+    """Incremental state for anomaly B detection during ordered merge."""
+
+    pending_bucket_points: dict[datetime, list[_LoiteringPoint]] = field(
+        default_factory=lambda: defaultdict(list)
+    )
+    active_pairs: dict[tuple[int, int], _ActiveLoiteringPair] = field(default_factory=dict)
+    finished_events: list[LoiteringTransferEvent] = field(default_factory=list)
+    bucket_seconds: int = DEFAULT_B_BUCKET_SECONDS
+    max_distance_km: float = DEFAULT_B_MAX_DISTANCE_KM
+    max_sog_knots: float = DEFAULT_B_MAX_SOG_KNOTS
+    min_duration_hours: float = DEFAULT_B_MIN_DURATION_HOURS
+    max_continuation_gap_seconds: int = DEFAULT_B_MAX_CONTINUATION_GAP_SECONDS
+    finalized: bool = False
+
+
 @dataclass(slots=True)
 class MergeState:
     """
@@ -36,11 +73,14 @@ class MergeState:
 
     global_summaries: dict[int, VesselGlobalSummary] = field(default_factory=dict)
     boundary_states: dict[int, BoundaryState] = field(default_factory=dict)
+    loitering_state: LoiteringState | None = None
 
 
-def create_merge_state() -> MergeState:
+def create_merge_state(enable_loitering_detection: bool = False) -> MergeState:
     """Create an empty merge state for incremental chunk merging."""
-    return MergeState()
+    return MergeState(
+        loitering_state=LoiteringState() if enable_loitering_detection else None,
+    )
 
 
 def merge_chunk_result_into_state(
@@ -50,6 +90,8 @@ def merge_chunk_result_into_state(
     minimum_port_radius_km: float = 0.0,
 ) -> None:
     """Merge a single chunk result into the incremental global state."""
+    latest_sampled_timestamp: datetime | None = None
+
     for mmsi, chunk_summary in chunk_result.vessel_summaries.items():
         global_summary = merge_state.global_summaries.get(mmsi)
         if global_summary is None:
@@ -69,6 +111,18 @@ def merge_chunk_result_into_state(
             minimum_port_radius_km=minimum_port_radius_km,
         )
 
+        if chunk_summary.sampled_records:
+            last_sampled_timestamp = chunk_summary.sampled_records[-1].timestamp
+            if latest_sampled_timestamp is None or last_sampled_timestamp > latest_sampled_timestamp:
+                latest_sampled_timestamp = last_sampled_timestamp
+
+            _merge_loitering_sampled_records(
+                merge_state=merge_state,
+                sampled_records=chunk_summary.sampled_records,
+                port_zones=port_zones,
+                minimum_port_radius_km=minimum_port_radius_km,
+            )
+
         merge_state.boundary_states[mmsi] = BoundaryState(
             last_record=chunk_summary.last_record,
             last_chunk_id=chunk_result.chunk_id,
@@ -77,6 +131,17 @@ def merge_chunk_result_into_state(
                 if chunk_summary.sampled_records
                 else None
             ),
+        )
+
+    if merge_state.loitering_state is not None and latest_sampled_timestamp is not None:
+        current_bucket_time = _bucketize_timestamp(
+            latest_sampled_timestamp,
+            merge_state.loitering_state.bucket_seconds,
+        )
+        _process_ready_loitering_buckets(
+            merge_state=merge_state,
+            watermark_bucket_time=current_bucket_time,
+            flush_all=False,
         )
 
 
@@ -117,7 +182,6 @@ def _merge_local_chunk_summary(
     global_summary.teleportation_events.extend(chunk_summary.teleportation_events)
     global_summary.teleportation_d1_events.extend(chunk_summary.teleportation_d1_events)
     global_summary.teleportation_d2_events.extend(chunk_summary.teleportation_d2_events)
-    global_summary.sampled_records.extend(chunk_summary.sampled_records)
 
 
 def _merge_boundary_anomalies(
@@ -177,3 +241,147 @@ def _merge_boundary_anomalies(
         else:
             global_summary.teleportation_d2_events.append(teleportation_event)
             global_summary.total_impossible_jump_km += teleportation_event.distance_km
+
+
+def finalize_loitering_detection(merge_state: MergeState) -> list[LoiteringTransferEvent]:
+    """Finalize incremental anomaly B detection and return all events."""
+    loitering_state = merge_state.loitering_state
+    if loitering_state is None:
+        return []
+
+    if loitering_state.finalized:
+        return list(loitering_state.finished_events)
+
+    _process_ready_loitering_buckets(
+        merge_state=merge_state,
+        watermark_bucket_time=None,
+        flush_all=True,
+    )
+
+    for active in list(loitering_state.active_pairs.values()):
+        event = _finalize_active_loitering_pair(
+            active=active,
+            min_duration_hours=loitering_state.min_duration_hours,
+        )
+        if event is not None:
+            _store_loitering_event(merge_state, event)
+
+    loitering_state.active_pairs.clear()
+    loitering_state.finalized = True
+    return list(loitering_state.finished_events)
+
+
+def _merge_loitering_sampled_records(
+    merge_state: MergeState,
+    sampled_records: list[AISRecord],
+    port_zones: Sequence[PortZone] | None,
+    minimum_port_radius_km: float,
+) -> None:
+    """Convert sampled vessel records into incremental anomaly B bucket state."""
+    loitering_state = merge_state.loitering_state
+    if loitering_state is None or port_zones is None:
+        return
+
+    for record in sampled_records:
+        point = _record_to_loitering_point(
+            record=record,
+            port_zones=port_zones,
+            max_sog_knots=loitering_state.max_sog_knots,
+            minimum_port_radius_km=minimum_port_radius_km,
+        )
+        if point is None:
+            continue
+
+        bucket_time = _bucketize_timestamp(
+            point.timestamp,
+            loitering_state.bucket_seconds,
+        )
+        loitering_state.pending_bucket_points[bucket_time].append(point)
+
+
+def _process_ready_loitering_buckets(
+    merge_state: MergeState,
+    watermark_bucket_time: datetime | None,
+    flush_all: bool,
+) -> None:
+    """Process all anomaly B buckets that are ready for ordered reduction."""
+    loitering_state = merge_state.loitering_state
+    if loitering_state is None:
+        return
+
+    ready_bucket_times = [
+        bucket_time
+        for bucket_time in loitering_state.pending_bucket_points
+        if flush_all or (watermark_bucket_time is not None and bucket_time < watermark_bucket_time)
+    ]
+
+    for bucket_time in sorted(ready_bucket_times):
+        points = loitering_state.pending_bucket_points.pop(bucket_time)
+        _process_loitering_bucket(merge_state, bucket_time, points)
+
+
+def _process_loitering_bucket(
+    merge_state: MergeState,
+    bucket_time: datetime,
+    points: list[_LoiteringPoint],
+) -> None:
+    """Update incremental anomaly B pair state using one closed time bucket."""
+    loitering_state = merge_state.loitering_state
+    if loitering_state is None:
+        return
+
+    pairs_in_bucket = _find_close_pairs_in_bucket(
+        points=points,
+        max_distance_km=loitering_state.max_distance_km,
+    )
+
+    current_keys = set(pairs_in_bucket)
+
+    expired_keys: list[tuple[int, int]] = []
+    for pair_key, active in loitering_state.active_pairs.items():
+        gap_seconds = (bucket_time - active.end_timestamp).total_seconds()
+        if pair_key not in current_keys and gap_seconds > loitering_state.max_continuation_gap_seconds:
+            event = _finalize_active_loitering_pair(
+                active=active,
+                min_duration_hours=loitering_state.min_duration_hours,
+            )
+            if event is not None:
+                _store_loitering_event(merge_state, event)
+            expired_keys.append(pair_key)
+
+    for pair_key in expired_keys:
+        loitering_state.active_pairs.pop(pair_key, None)
+
+    for pair_key, pair_obs in pairs_in_bucket.items():
+        existing = loitering_state.active_pairs.get(pair_key)
+        if existing is None:
+            loitering_state.active_pairs[pair_key] = _start_active_loitering_pair(
+                pair_obs=pair_obs,
+                bucket_time=bucket_time,
+            )
+        else:
+            _update_active_loitering_pair(
+                active=existing,
+                pair_obs=pair_obs,
+                bucket_time=bucket_time,
+            )
+
+
+def _store_loitering_event(
+    merge_state: MergeState,
+    event: LoiteringTransferEvent,
+) -> None:
+    """Attach a finalized anomaly B event to global summaries and event list."""
+    loitering_state = merge_state.loitering_state
+    if loitering_state is None:
+        return
+
+    loitering_state.finished_events.append(event)
+
+    summary_a = merge_state.global_summaries.get(event.mmsi_a)
+    if summary_a is not None:
+        summary_a.loitering_transfer_events.append(event)
+
+    summary_b = merge_state.global_summaries.get(event.mmsi_b)
+    if summary_b is not None and event.mmsi_b != event.mmsi_a:
+        summary_b.loitering_transfer_events.append(event)

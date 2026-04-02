@@ -12,8 +12,8 @@ from src.anomaly_detection import (
     get_top_going_dark_vessel_visualization_data,
     merge_chunk_result_into_state,
 )
+from src.anomaly_detection.merge import finalize_loitering_detection
 from src.anomaly_detection.rules import (
-    detect_loitering_transfers,
     get_top_teleportation_d1_vessel_visualization_data,
     get_top_teleportation_d2_vessel_visualization_data
 )
@@ -95,9 +95,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Path to output CSV of top Anomaly A vessel coordinates for map visualization.",
     )
     parser.add_argument(
-        "--enable-loitering-detection",
+        "--disable-loitering-detection",
         action="store_true",
-        help="Enable anomaly B (loitering & transfers) detection step",
+        default=False,
+        help="Disable anomaly B (loitering & transfers) detection.",
     )
     parser.add_argument(
         "--loitering-viz-output",
@@ -457,7 +458,7 @@ def main() -> None:
     teleportation_d2_viz_output: Path = args.teleportation_d2_viz_output
     going_dark_viz_output: Path = args.going_dark_viz_output
     loitering_viz_output: Path = args.loitering_viz_output
-    enable_loitering_detection: bool = args.enable_loitering_detection
+    enable_loitering_detection: bool = not args.disable_loitering_detection
 
     if chunk_size <= 0:
         raise ValueError("chunk_size must be greater than 0")
@@ -498,7 +499,9 @@ def main() -> None:
     )
     print("=" * 80)
 
-    merge_state = create_merge_state()
+    merge_state = create_merge_state(
+        enable_loitering_detection=enable_loitering_detection,
+    )
     port_zones = load_port_zones()
 
     tasks = stream_csv_files_in_chunks(
@@ -555,8 +558,7 @@ def main() -> None:
     global_summaries = merge_state.global_summaries
 
     if enable_loitering_detection:
-        loitering_events = detect_loitering_transfers(global_summaries, port_zones)
-        attach_loitering_events_to_summaries(global_summaries, loitering_events)
+        loitering_events = finalize_loitering_detection(merge_state)
     else:
         loitering_events = []
 

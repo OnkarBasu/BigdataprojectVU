@@ -140,6 +140,8 @@ def write_results_csv(
                 "teleportation_events",
                 "teleportation_d1_events",
                 "teleportation_d2_events",
+                "teleportation_d2_valid_events",
+                "teleportation_d2_flagged_events",
                 "loitering_transfer_events",
             ]
         )
@@ -160,6 +162,8 @@ def write_results_csv(
                     len(summary.teleportation_events),
                     len(summary.teleportation_d1_events),
                     len(summary.teleportation_d2_events),
+                    sum(1 for event in summary.teleportation_d2_events if event.counts_for_dfsi),
+                    sum(1 for event in summary.teleportation_d2_events if not event.counts_for_dfsi),
                     len(summary.loitering_transfer_events),
                 ]
             )
@@ -187,13 +191,20 @@ def write_teleportation_visualization_csv(
     columns = [
         "mmsi",
         "event_index",
-        "lat_origin",
-        "lon_origin",
-        "lat_destination",
-        "lon_destination",
         "subtype",
+        "point_a_timestamp",
+        "point_a_latitude",
+        "point_a_longitude",
+        "point_b_timestamp",
+        "point_b_latitude",
+        "point_b_longitude",
+        "gap_hours",
         "implied_speed_knots",
         "distance_km",
+        "point_a_on_land",
+        "point_b_on_land",
+        "quality_flag",
+        "counts_for_dfsi",
     ]
 
     with output_file.open("w", newline="", encoding="utf-8") as csvfile:
@@ -204,13 +215,20 @@ def write_teleportation_visualization_csv(
                 [
                     row["mmsi"],
                     row["event_index"],
-                    f"{row['lat_origin']:.6f}",
-                    f"{row['lon_origin']:.6f}",
-                    f"{row['lat_destination']:.6f}",
-                    f"{row['lon_destination']:.6f}",
                     row["subtype"],
+                    row["point_a_timestamp"],
+                    f"{row['point_a_latitude']:.6f}",
+                    f"{row['point_a_longitude']:.6f}",
+                    row["point_b_timestamp"],
+                    f"{row['point_b_latitude']:.6f}",
+                    f"{row['point_b_longitude']:.6f}",
+                    f"{row['gap_hours']:.6f}",
                     f"{row['implied_speed_knots']:.3f}",
                     f"{row['distance_km']:.3f}",
+                    row["point_a_on_land"],
+                    row["point_b_on_land"],
+                    row["quality_flag"],
+                    row["counts_for_dfsi"],
                 ]
             )
 

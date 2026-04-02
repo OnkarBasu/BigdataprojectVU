@@ -199,7 +199,7 @@ The pipeline is designed as a **streaming + multiprocessing system**:
 The pipeline is evaluated under different configurations:
 
 - number of workers
-- chunk size
+- chunk size (streaming granularity)
 
 ### Metrics
 
@@ -222,24 +222,26 @@ S(n) = 1 / ((1 - P) + P / n)
 ```text
 .
 ├── data/
-|   ├──ports_dma_region.csv
-|   ├──full/
-|   ├──output/
-|   └──sample/
+│   ├── full/              # full AIS dataset placeholder / input location
+│   ├── output/            # detection results and exported CSV files
+│   ├── sample/            # sample AIS datasets for testing
+│   └── ports_dma_region.csv
 ├── scripts/
 |   └──run_detection.py (as main endpoint)
 ├── src/
-|   ├──anomaly_detection/
-|   ├──models/
-|   ├──parallel/
-|   ├──performance/
-|   ├──streaming/
-|   └──utils/
+│   ├── anomaly_detection/ # anomaly rules, merge logic, DFSI scoring
+│   ├── models/            # AIS records, events, processing summaries
+│   ├── parallel/          # worker pool logic
+│   ├── performance/       # memory profiling
+│   ├── streaming/         # CSV reading, raw row extraction, chunking
+│   ├── utils/             # geo and port utilities
+│   └── config.py
+├── visualization/         # plotting and map generation scripts
 ├── visualization/
 |   └──run_plots.py (as vis endpoint)
 ├── analysis/
 |   └──performance_benchmarking.ipynb
-├── README.md
+├── README.md              # You are here :)
 ├── CONTRIBUTING.md
 ├── LICENSE
 └── requirements.txt
@@ -259,13 +261,13 @@ S(n) = 1 / ((1 - P) + P / n)
 
 ## How to run
 
-### Default
+### Minimal example
 
 ```bash
 python -m scripts.run_detection data/sample/file.csv --chunk-size 100000 --workers 4
 ```
 
-### With additional arguments
+### Example with optional arguments
 
 ```bash
 python -m scripts.run_detection \
@@ -307,4 +309,4 @@ DFSI = (Max Gap Hours / 2)
 
 ## Contributing
 
-See CONTRIBUTING.md
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the branching strategy, pull request process, and repository workflow.

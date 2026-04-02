@@ -94,10 +94,7 @@ def _get_prepared_land_geometry():
 
 def _is_point_on_land(latitude: float, longitude: float) -> bool | None:
     """Return coarse land-mask result using a low-resolution Natural Earth layer."""
-    try:
-        prepared_land = _get_prepared_land_geometry()
-    except (OSError, ValueError, RuntimeError):
-        return None
+    prepared_land = _get_prepared_land_geometry()
 
     if prepared_land is None:
         return None
@@ -115,13 +112,17 @@ def _classify_d2_quality(
     start_on_land = _is_point_on_land(previous.latitude, previous.longitude)
     end_on_land = _is_point_on_land(current.latitude, current.longitude)
 
-    if start_on_land is not True and end_on_land is not True:
+    if start_on_land is None or end_on_land is None:
+        return start_on_land, end_on_land, "suspect_land_point", False
+
+    if start_on_land is False and end_on_land is False:
         return start_on_land, end_on_land, "ok", True
 
     if port_zones is None:
         return start_on_land, end_on_land, "suspect_land_point", False
 
     port_radius_km = max(minimum_port_radius_km, DEFAULT_D2_PORT_PROXIMITY_KM)
+
     start_near_port = is_near_any_port(
         latitude=previous.latitude,
         longitude=previous.longitude,
@@ -842,7 +843,9 @@ def get_top_teleportation_d2_vessel_visualization_data(global_summaries):
     best_count = 0
 
     for mmsi, summary in global_summaries.items():
-        count = len(summary.teleportation_d2_events)
+        valid_events = [event for event in summary.teleportation_d2_events if event.counts_for_dfsi]
+        count = len(valid_events)
+
         if count > best_count:
             best_count = count
             best_mmsi = mmsi
@@ -854,9 +857,10 @@ def get_top_teleportation_d2_vessel_visualization_data(global_summaries):
         return None
 
     summary = global_summaries[best_mmsi]
+    valid_events = [event for event in summary.teleportation_d2_events if event.counts_for_dfsi]
 
     rows = []
-    for i, event in enumerate(summary.teleportation_d2_events, start=1):
+    for i, event in enumerate(valid_events, start=1):
         rows.append({
             "mmsi": event.mmsi,
             "event_index": i,

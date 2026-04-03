@@ -154,6 +154,7 @@ def _build_vessel_chunk_summary(
                 summary.teleportation_d1_events.append(teleportation_event)
             else:
                 summary.teleportation_d2_events.append(teleportation_event)
-                summary.total_impossible_jump_km += teleportation_event.distance_km
+                if teleportation_event.counts_for_dfsi:
+                    summary.total_impossible_jump_km += teleportation_event.distance_km
 
     return summary

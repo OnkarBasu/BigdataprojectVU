@@ -2,9 +2,15 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
+from functools import lru_cache
 import math
+from pathlib import Path
 from typing import DefaultDict, Sequence
+
+import geopandas as gpd
+from shapely.geometry import Point
+from shapely.prepared import prep
 
 from src.models import (
     AISRecord,
@@ -12,6 +18,7 @@ from src.models import (
     GoingDarkEvent,
     LoiteringTransferEvent,
     TeleportationEvent,
+    TeleportationQualityFlag,
     VesselGlobalSummary,
 )
 from src.utils.geo import calculate_distance
@@ -32,6 +39,12 @@ DEFAULT_B_MAX_SOG_KNOTS = 1.0
 DEFAULT_B_MIN_DURATION_HOURS = 2.0
 DEFAULT_B_BUCKET_SECONDS = 5 * 60
 DEFAULT_B_MAX_CONTINUATION_GAP_SECONDS = 2 * DEFAULT_B_BUCKET_SECONDS
+
+DEFAULT_D2_PORT_PROXIMITY_KM = 15.0
+NATURAL_EARTH_LOWRES_PATH = Path(
+    "/opt/pyvenv/lib/python3.13/site-packages/pyogrio/tests/fixtures/"
+    "naturalearth_lowres/naturalearth_lowres.shp"
+)
 
 
 @dataclass(slots=True, frozen=True)
@@ -67,6 +80,66 @@ class _ActiveLoiteringPair:
     min_distance_km: float
     total_distance_km: float
     observation_count: int
+
+
+@lru_cache(maxsize=1)
+def _get_prepared_land_geometry():
+    """Load a coarse global land mask for event-level quality checks."""
+    if not NATURAL_EARTH_LOWRES_PATH.exists():
+        return None
+
+    land = gpd.read_file(NATURAL_EARTH_LOWRES_PATH)["geometry"].union_all()
+    return prep(land)
+
+
+def _is_point_on_land(latitude: float, longitude: float) -> bool | None:
+    """Return coarse land-mask result using a low-resolution Natural Earth layer."""
+    prepared_land = _get_prepared_land_geometry()
+
+    if prepared_land is None:
+        return None
+
+    return prepared_land.contains(Point(longitude, latitude))
+
+
+def _classify_d2_quality(
+    previous: AISRecord,
+    current: AISRecord,
+    port_zones: Sequence[PortZone] | None,
+    minimum_port_radius_km: float,
+) -> tuple[bool | None, bool | None, TeleportationQualityFlag, bool]:
+    """Classify D2 event quality and whether it should contribute to DFSI."""
+    start_on_land = _is_point_on_land(previous.latitude, previous.longitude)
+    end_on_land = _is_point_on_land(current.latitude, current.longitude)
+
+    if start_on_land is None or end_on_land is None:
+        return start_on_land, end_on_land, "suspect_land_point", False
+
+    if start_on_land is False and end_on_land is False:
+        return start_on_land, end_on_land, "ok", True
+
+    if port_zones is None:
+        return start_on_land, end_on_land, "suspect_land_point", False
+
+    port_radius_km = max(minimum_port_radius_km, DEFAULT_D2_PORT_PROXIMITY_KM)
+
+    start_near_port = is_near_any_port(
+        latitude=previous.latitude,
+        longitude=previous.longitude,
+        port_zones=port_zones,
+        minimum_radius_km=port_radius_km,
+    )
+    end_near_port = is_near_any_port(
+        latitude=current.latitude,
+        longitude=current.longitude,
+        port_zones=port_zones,
+        minimum_radius_km=port_radius_km,
+    )
+
+    if start_near_port or end_near_port:
+        return start_on_land, end_on_land, "suspect_land_point_near_port", False
+
+    return start_on_land, end_on_land, "suspect_land_point", False
 
 
 def calculate_time_gap_hours(previous: AISRecord, current: AISRecord) -> float:
@@ -238,6 +311,8 @@ def detect_teleportation(
     d2_max_gap_hours: float = DEFAULT_D2_MAX_GAP_HOURS,
     min_gap_seconds: float = DEFAULT_D_MIN_GAP_SECONDS,
     min_distance_km: float = DEFAULT_D_MIN_DISTANCE_KM,
+    port_zones: Sequence[PortZone] | None = None,
+    minimum_port_radius_km: float = 0.0,
 ) -> TeleportationEvent | None:
     """
     Detect anomaly D for a pair of AIS records.
@@ -247,9 +322,9 @@ def detect_teleportation(
     - D2: impossible relocation after a longer blackout, up to
       ``d2_max_gap_hours``.
 
-    The pair is ignored when the time gap is too small, when a coordinate is
-    the common placeholder ``(0, 0)``, or when the spatial displacement is too
-    small to be meaningful.
+    For D2, the event is additionally quality-classified with a coarse
+    land-mask check so obvious inland/bad-coordinate cases can be excluded
+    from DFSI while still being preserved for post-analysis.
     """
     _validate_same_mmsi(previous, current)
 
@@ -277,15 +352,33 @@ def detect_teleportation(
         return None
 
     if gap_hours <= d1_max_gap_hours:
-        subtype = "D1"
-    elif gap_hours <= d2_max_gap_hours:
-        subtype = "D2"
-    else:
+        return TeleportationEvent(
+            mmsi=previous.mmsi,
+            subtype="D1",
+            start_timestamp=previous.timestamp,
+            end_timestamp=current.timestamp,
+            gap_hours=gap_hours,
+            start_latitude=previous.latitude,
+            start_longitude=previous.longitude,
+            end_latitude=current.latitude,
+            end_longitude=current.longitude,
+            distance_km=distance_km,
+            implied_speed_knots=implied_speed_knots,
+        )
+
+    if gap_hours > d2_max_gap_hours:
         return None
+
+    start_on_land, end_on_land, quality_flag, counts_for_dfsi = _classify_d2_quality(
+        previous=previous,
+        current=current,
+        port_zones=port_zones,
+        minimum_port_radius_km=minimum_port_radius_km,
+    )
 
     return TeleportationEvent(
         mmsi=previous.mmsi,
-        subtype=subtype,
+        subtype="D2",
         start_timestamp=previous.timestamp,
         end_timestamp=current.timestamp,
         gap_hours=gap_hours,
@@ -295,6 +388,10 @@ def detect_teleportation(
         end_longitude=current.longitude,
         distance_km=distance_km,
         implied_speed_knots=implied_speed_knots,
+        start_on_land=start_on_land,
+        end_on_land=end_on_land,
+        quality_flag=quality_flag,
+        counts_for_dfsi=counts_for_dfsi,
     )
 
 
@@ -341,6 +438,8 @@ def detect_all_pair_anomalies(
         d2_max_gap_hours=teleportation_d2_max_gap_hours,
         min_gap_seconds=teleportation_min_gap_seconds,
         min_distance_km=teleportation_min_distance_km,
+        port_zones=port_zones,
+        minimum_port_radius_km=minimum_port_radius_km,
     )
 
     return going_dark_event, draft_change_event, teleportation_event
@@ -462,12 +561,19 @@ def get_top_teleportation_vessel_visualization_data(
                 "mmsi": event.mmsi,
                 "event_index": event_index,
                 "subtype": event.subtype,
-                "lat_origin": event.start_latitude,
-                "lon_origin": event.start_longitude,
-                "lat_destination": event.end_latitude,
-                "lon_destination": event.end_longitude,
+                "point_a_timestamp": event.start_timestamp.isoformat(),
+                "point_a_latitude": event.start_latitude,
+                "point_a_longitude": event.start_longitude,
+                "point_b_timestamp": event.end_timestamp.isoformat(),
+                "point_b_latitude": event.end_latitude,
+                "point_b_longitude": event.end_longitude,
+                "gap_hours": event.gap_hours,
                 "implied_speed_knots": event.implied_speed_knots,
                 "distance_km": event.distance_km,
+                "point_a_on_land": "" if event.start_on_land is None else str(event.start_on_land).lower(),
+                "point_b_on_land": "" if event.end_on_land is None else str(event.end_on_land).lower(),
+                "quality_flag": event.quality_flag,
+                "counts_for_dfsi": str(event.counts_for_dfsi).lower(),
             }
         )
 
@@ -714,12 +820,19 @@ def get_top_teleportation_d1_vessel_visualization_data(global_summaries):
             "mmsi": event.mmsi,
             "event_index": i,
             "subtype": "D1",
-            "lat_origin": event.start_latitude,
-            "lon_origin": event.start_longitude,
-            "lat_destination": event.end_latitude,
-            "lon_destination": event.end_longitude,
+            "point_a_timestamp": event.start_timestamp.isoformat(),
+            "point_a_latitude": event.start_latitude,
+            "point_a_longitude": event.start_longitude,
+            "point_b_timestamp": event.end_timestamp.isoformat(),
+            "point_b_latitude": event.end_latitude,
+            "point_b_longitude": event.end_longitude,
+            "gap_hours": event.gap_hours,
             "implied_speed_knots": event.implied_speed_knots,
             "distance_km": event.distance_km,
+            "point_a_on_land": "" if event.start_on_land is None else str(event.start_on_land).lower(),
+            "point_b_on_land": "" if event.end_on_land is None else str(event.end_on_land).lower(),
+            "quality_flag": event.quality_flag,
+            "counts_for_dfsi": str(event.counts_for_dfsi).lower(),
         })
 
     return best_mmsi, rows
@@ -730,7 +843,9 @@ def get_top_teleportation_d2_vessel_visualization_data(global_summaries):
     best_count = 0
 
     for mmsi, summary in global_summaries.items():
-        count = len(summary.teleportation_d2_events)
+        valid_events = [event for event in summary.teleportation_d2_events if event.counts_for_dfsi]
+        count = len(valid_events)
+
         if count > best_count:
             best_count = count
             best_mmsi = mmsi
@@ -742,19 +857,27 @@ def get_top_teleportation_d2_vessel_visualization_data(global_summaries):
         return None
 
     summary = global_summaries[best_mmsi]
+    valid_events = [event for event in summary.teleportation_d2_events if event.counts_for_dfsi]
 
     rows = []
-    for i, event in enumerate(summary.teleportation_d2_events, start=1):
+    for i, event in enumerate(valid_events, start=1):
         rows.append({
             "mmsi": event.mmsi,
             "event_index": i,
             "subtype": "D2",
-            "lat_origin": event.start_latitude,
-            "lon_origin": event.start_longitude,
-            "lat_destination": event.end_latitude,
-            "lon_destination": event.end_longitude,
+            "point_a_timestamp": event.start_timestamp.isoformat(),
+            "point_a_latitude": event.start_latitude,
+            "point_a_longitude": event.start_longitude,
+            "point_b_timestamp": event.end_timestamp.isoformat(),
+            "point_b_latitude": event.end_latitude,
+            "point_b_longitude": event.end_longitude,
+            "gap_hours": event.gap_hours,
             "implied_speed_knots": event.implied_speed_knots,
             "distance_km": event.distance_km,
+            "point_a_on_land": "" if event.start_on_land is None else str(event.start_on_land).lower(),
+            "point_b_on_land": "" if event.end_on_land is None else str(event.end_on_land).lower(),
+            "quality_flag": event.quality_flag,
+            "counts_for_dfsi": str(event.counts_for_dfsi).lower(),
         })
 
     return best_mmsi, rows

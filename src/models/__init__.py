@@ -3,6 +3,7 @@ from src.models.events import (
     DraftChangeEvent,
     GoingDarkEvent,
     TeleportationEvent,
+    TeleportationQualityFlag,
     LoiteringTransferEvent
 )
 from src.models.processing import (
@@ -19,5 +20,6 @@ __all__ = [
     "VesselChunkSummary",
     "ChunkProcessingResult",
     "VesselGlobalSummary",
-    "LoiteringTransferEvent"
+    "LoiteringTransferEvent",
+    "TeleportationQualityFlag"
 ]

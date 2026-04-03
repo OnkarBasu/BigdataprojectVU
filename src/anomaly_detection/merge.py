@@ -240,7 +240,8 @@ def _merge_boundary_anomalies(
             global_summary.teleportation_d1_events.append(teleportation_event)
         else:
             global_summary.teleportation_d2_events.append(teleportation_event)
-            global_summary.total_impossible_jump_km += teleportation_event.distance_km
+            if teleportation_event.counts_for_dfsi:
+                global_summary.total_impossible_jump_km += teleportation_event.distance_km
 
 
 def finalize_loitering_detection(merge_state: MergeState) -> list[LoiteringTransferEvent]:

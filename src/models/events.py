@@ -68,6 +68,11 @@ class DraftChangeEvent:
 
 
 TeleportationSubtype = Literal["D1", "D2"]
+TeleportationQualityFlag = Literal[
+    "ok",
+    "suspect_land_point",
+    "suspect_land_point_near_port",
+]
 
 
 @dataclass(slots=True, frozen=True)
@@ -94,6 +99,10 @@ class TeleportationEvent:
         end_longitude: Longitude of the later position.
         distance_km: Great-circle distance in kilometers.
         implied_speed_knots: Required speed in knots to cover the distance.
+        start_on_land: Optional coarse land-mask result for the earlier point.
+        end_on_land: Optional coarse land-mask result for the later point.
+        quality_flag: Quality classification for the event record.
+        counts_for_dfsi: Whether this event should contribute to DFSI.
     """
 
     mmsi: int
@@ -107,6 +116,10 @@ class TeleportationEvent:
     end_longitude: float
     distance_km: float
     implied_speed_knots: float
+    start_on_land: bool | None = None
+    end_on_land: bool | None = None
+    quality_flag: TeleportationQualityFlag = "ok"
+    counts_for_dfsi: bool = True
 
 
 @dataclass(slots=True, frozen=True)

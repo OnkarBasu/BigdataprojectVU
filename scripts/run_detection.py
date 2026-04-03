@@ -11,8 +11,9 @@ from src.anomaly_detection import (
     create_merge_state,
     get_top_going_dark_vessel_visualization_data,
     merge_chunk_result_into_state,
+    calculate_d1_episode_count,
+    finalize_loitering_detection
 )
-from src.anomaly_detection.merge import finalize_loitering_detection
 from src.anomaly_detection.rules import (
     get_top_teleportation_d1_vessel_visualization_data,
     get_top_teleportation_d2_vessel_visualization_data
@@ -139,6 +140,7 @@ def write_results_csv(
                 "draft_change_events",
                 "teleportation_events",
                 "teleportation_d1_events",
+                "d1_episode_count",
                 "teleportation_d2_events",
                 "teleportation_d2_valid_events",
                 "teleportation_d2_flagged_events",
@@ -162,6 +164,7 @@ def write_results_csv(
                     len(summary.teleportation_events),
                     len(summary.teleportation_d1_events),
                     len(summary.teleportation_d2_events),
+                    calculate_d1_episode_count(summary),
                     sum(1 for event in summary.teleportation_d2_events if event.counts_for_dfsi),
                     sum(1 for event in summary.teleportation_d2_events if not event.counts_for_dfsi),
                     len(summary.loitering_transfer_events),

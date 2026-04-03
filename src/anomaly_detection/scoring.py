@@ -1,7 +1,34 @@
 from __future__ import annotations
+from datetime import timedelta
 
 from src.models import VesselGlobalSummary
 from src.anomaly_detection import kilometers_to_nautical_miles
+
+
+def calculate_d1_episode_count(summary: VesselGlobalSummary) -> int:
+    """Aggregate D1 events into episodes using a 2-hour merge window."""
+    events = summary.teleportation_d1_events
+    if not events:
+        return 0
+
+    events_sorted = sorted(events, key=lambda e: e.start_timestamp)
+
+    episode_count = 0
+    current_episode_end = None
+
+    for event in events_sorted:
+        if current_episode_end is None:
+            episode_count += 1
+            current_episode_end = event.end_timestamp
+            continue
+
+        if event.start_timestamp <= current_episode_end + timedelta(hours=2):
+            current_episode_end = max(current_episode_end, event.end_timestamp)
+        else:
+            episode_count += 1
+            current_episode_end = event.end_timestamp
+
+    return episode_count
 
 
 def calculate_dfsi(summary: VesselGlobalSummary) -> float:
@@ -21,10 +48,13 @@ def calculate_dfsi(summary: VesselGlobalSummary) -> float:
         summary.total_impossible_jump_km,
     )
 
+    d1_episode_count = calculate_d1_episode_count(summary)
+
     return (
         (summary.max_gap_hours / 2.0)
         + (total_impossible_jump_nm / 10.0)
         + (summary.draft_change_count * 15.0)
+        + (d1_episode_count * 20.0)
     )
 
 

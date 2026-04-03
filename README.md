@@ -301,9 +301,31 @@ python -m scripts.run_detection \
 
 ## DFSI formula
 
-DFSI = (Max Gap Hours / 2)  
-     + (D2 Distance / 10)  
-     + (Draft Changes * 15)
+DFSI = (Max Gap Hours / 2)
+     + (Draft Changes * 15)  
+     + (D1 Episodes * 20)
+     + (D2 Distance (valid only) in nautical miles / 10)  
+
+### D1 aggregation strategy
+
+D1 (near-simultaneous MMSI cloning) events are aggregated into **temporal episodes** 
+to avoid overcounting due to AIS sampling density.
+
+- Consecutive D1 events are merged into a single episode if they occur within a 2-hour window.
+- The DFSI uses the number of such episodes (`D1 Episodes`) instead of raw event count.
+
+This ensures that one physical spoofing incident is not counted multiple times 
+due to high-frequency AIS reporting.
+
+### D2 quality filtering
+
+D2 (impossible relocation) events are subject to additional validation:
+
+- Events with coordinates located on land (based on a coarse land mask)  
+  are flagged as low-quality and excluded from DFSI calculation.
+- Only validated D2 events contribute to the DFSI distance component.
+
+This reduces the impact of corrupted AIS data and coordinate errors.
 
 ---
 

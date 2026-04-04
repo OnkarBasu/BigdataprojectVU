@@ -15,7 +15,7 @@ from src.output import (
     write_loitering_visualization_csv,
 )
 from src.pipeline import run_detection_pipeline
-from src.config import DEFAULT_DETECTION_CONFIG
+from src.detection_config import DEFAULT_DETECTION_CONFIG
 
 
 def build_argument_parser() -> argparse.ArgumentParser:

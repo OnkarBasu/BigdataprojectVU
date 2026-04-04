@@ -5,7 +5,7 @@ from collections import defaultdict
 from typing import DefaultDict, Sequence
 
 from src.anomaly_detection import detect_all_pair_anomalies
-from src.config import DEFAULT_DETECTION_CONFIG, DetectionConfig
+from src.detection_config import DEFAULT_DETECTION_CONFIG, DetectionConfig
 from src.models import AISRecord, ChunkProcessingResult, VesselChunkSummary
 from src.streaming import Chunk
 from src.streaming.parser import AISRowParser

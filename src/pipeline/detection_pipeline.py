@@ -11,7 +11,7 @@ from src.anomaly_detection import (
     finalize_loitering_detection,
     merge_chunk_result_into_state,
 )
-from src.config import DEFAULT_DETECTION_CONFIG, DetectionConfig
+from src.detection_config import DEFAULT_DETECTION_CONFIG, DetectionConfig
 from src.models import ChunkProcessingResult
 from src.parallel import process_chunk, worker_init
 from src.performance import get_current_process, get_rss_mb

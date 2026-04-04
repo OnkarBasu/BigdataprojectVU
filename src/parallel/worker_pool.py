@@ -4,7 +4,7 @@ import time
 from collections import defaultdict
 from typing import DefaultDict, Sequence
 
-from src.anomaly_detection import detect_all_pair_anomalies
+from src.anomaly_detection import detect_all_pair_anomalies, preload_land_geometry
 from src.config import DEFAULT_DETECTION_CONFIG, DetectionConfig
 from src.models import AISRecord, ChunkProcessingResult, VesselChunkSummary
 from src.streaming import Chunk
@@ -29,6 +29,7 @@ def worker_init(
     PORT_ZONES = load_port_zones()
     ROW_PARSER = AISRowParser()
     DETECTION_CONFIG = detection_config
+    preload_land_geometry()
 
     import os
     print(f"Worker started: PID={os.getpid()}")

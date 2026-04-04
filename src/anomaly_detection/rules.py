@@ -137,6 +137,11 @@ def _classify_d2_quality(
     return start_on_land, end_on_land, "suspect_land_point", False
 
 
+def preload_land_geometry() -> None:
+    """Eagerly load the coarse land mask for the current process."""
+    _get_prepared_land_geometry()
+
+
 def calculate_time_gap_hours(previous: AISRecord, current: AISRecord) -> float:
     """
     Calculate the time difference between two AIS records in hours.

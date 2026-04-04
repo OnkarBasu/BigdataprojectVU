@@ -15,6 +15,7 @@ from .rules import (
     get_top_going_dark_vessel_visualization_data,
     get_top_teleportation_vessel_visualization_data,
     kilometers_to_nautical_miles,
+    preload_land_geometry,
 )
 from .merge import (
     MergeState,
@@ -48,5 +49,6 @@ __all__ = [
     "calculate_all_dfsi",
     "rank_vessels_by_dfsi",
     "finalize_loitering_detection",
-    "calculate_d1_episode_count"
+    "calculate_d1_episode_count",
+    "preload_land_geometry",
 ]

@@ -115,4 +115,3 @@ class VesselGlobalSummary:
     teleportation_d1_events: list[TeleportationEvent] = field(default_factory=list)
     teleportation_d2_events: list[TeleportationEvent] = field(default_factory=list)
     loitering_transfer_events: list[LoiteringTransferEvent] = field(default_factory=list)
-    sampled_records: list[AISRecord] = field(default_factory=list)

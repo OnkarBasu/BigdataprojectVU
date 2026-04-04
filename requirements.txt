@@ -11,4 +11,5 @@ pytest>=8.0.0
 
 # Visualization (result_plots.py)
 pandas>=1.5.0
+matplotlib>=3.8.0
 folium>=0.14.0

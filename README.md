@@ -227,20 +227,26 @@ S(n) = 1 / ((1 - P) + P / n)
 │   ├── sample/            # sample AIS datasets for testing
 │   └── ports_dma_region.csv
 ├── scripts/
-|   └──run_detection.py (as main endpoint)
+│   ├── run_detection.py   # main detection entrypoint
+│   └── run_benchmarks.py  # performance benchmarking runner
 ├── src/
-│   ├── anomaly_detection/ # anomaly rules, merge logic, DFSI scoring
+│   ├── anomaly_detection/ # rules, merge logic, DFSI scoring
+│   ├── config/            # detection and runtime configuration
 │   ├── models/            # AIS records, events, processing summaries
-│   ├── parallel/          # worker pool logic
-│   ├── performance/       # memory profiling
-│   ├── streaming/         # CSV reading, raw row extraction, chunking
-│   ├── utils/             # geo and port utilities
-│   └── config.py
+│   ├── output/            # CSV export helpers
+│   ├── parallel/          # worker initialization and chunk processing
+│   ├── performance/       # memory monitoring and summaries
+│   ├── pipeline/          # end-to-end detection pipeline
+│   ├── streaming/         # CSV reading, extraction, chunking
+│   └── utils/             # geo and port utilities
+├── tests/
+│   ├── integration/
+│   └── unit/
 ├── visualization/         # plotting and map generation scripts
-├── visualization/
-|   └──run_plots.py (as vis endpoint)
+|   ├── run_plots.py       # visualization entrypoint
+│   └── output/
 ├── analysis/
-|   └──performance_benchmarking.ipynb
+|   └── performance_benchmarking.ipynb
 ├── README.md              # You are here :)
 ├── CONTRIBUTING.md
 ├── LICENSE
@@ -251,11 +257,44 @@ S(n) = 1 / ((1 - P) + P / n)
 
 ## Output files
 
-- dfsi_results.csv
-- memory_profile.csv
-- worker_memory_profile.csv
-- memory_summary.csv
-- visualization datasets
+The detection pipeline exports:
+
+- `dfsi_results.csv`  
+  Final per-vessel DFSI table with:
+  - `record_count`
+  - `max_gap_hours`
+  - `impossible_relocation_km_d2`
+  - `draft_change_count`
+  - anomaly counts for A, B, C, D
+  - `d1_episode_count`
+  - valid vs flagged D2 event counts
+
+- `memory_profile.csv`  
+  Aggregated memory profile over time.
+
+- `worker_memory_profile.csv`  
+  Per-worker RAM usage samples.
+
+- `memory_summary.csv`  
+  Final memory summary (peak and final RSS metrics).
+
+- Visualization CSV files:
+  - `top_going_dark_vessel_map.csv`
+  - `top_loitering_vessel_map.csv`
+  - `top_teleportation_d1_vessel_map.csv`
+  - `top_teleportation_d2_vessel_map.csv`
+
+---
+
+## Installation
+
+Create and activate a virtual environment, then install dependencies:
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
 
 ---
 
@@ -264,16 +303,17 @@ S(n) = 1 / ((1 - P) + P / n)
 ### Minimal example
 
 ```bash
-python -m scripts.run_detection data/sample/file.csv --chunk-size 100000 --workers 4
-```
+python -m scripts.run_detection data/sample/2025-09-01_head_100_000_rows.csv```
 
-### Example with optional arguments
+### Example
 
 ```bash
 python -m scripts.run_detection \
+    data/sample/2025-08-31_tail_10_000_rows.csv \
     data/sample/2025-09-01_head_100_000_rows.csv \
-    --chunk-size 100000 \
+    --chunk-size 10000 \
     --workers 4 \
+    --encoding utf-8 \
     --top 10 \
     --output data/output/dfsi_results.csv \
     --memory-output data/output/memory_profile.csv \
@@ -287,45 +327,48 @@ python -m scripts.run_detection \
 
 ## Main arguments
 
-| Main argument              | Desc |
-|----------------------------|------|
-| input_files                | one or more AIS CSV files |
-| chunk-size                 | number of raw rows per chunk |
-| workers                    | number of worker processes |
-| top                        | number of top vessels to display |
-| output                     | final DFSI results CSV |
-| memory-output              | memory profiling CSV |
-| disable-loitering-detection| disables anomaly B detection |
+| Argument | Description |
+|---|---|
+| `input_files` | One or more AIS CSV files |
+| `--chunk-size` | Number of raw AIS rows per chunk |
+| `--workers` | Number of worker processes |
+| `--encoding` | Input file encoding |
+| `--top` | Number of top vessels to print by DFSI |
+| `--output` | Output path for final DFSI CSV |
+| `--memory-output` | Output path for aggregated memory profile |
+| `--teleportation-d1-viz-output` | Output path for top D1 vessel visualization CSV |
+| `--teleportation-d2-viz-output` | Output path for top D2 vessel visualization CSV |
+| `--going-dark-viz-output` | Output path for top anomaly A vessel visualization CSV |
+| `--loitering-viz-output` | Output path for top anomaly B vessel visualization CSV |
+| `--disable-loitering-detection` | Disable anomaly B detection for performance-oriented runs |
 
 ---
 
 ## DFSI formula
 
 DFSI = (Max Gap Hours / 2)
-     + (Draft Changes * 15)  
+     + (Draft Changes * 15)
      + (D1 Episodes * 20)
-     + (D2 Distance (valid only) in nautical miles / 10)  
+     + (Valid D2 Distance in nautical miles / 10)
 
 ### D1 aggregation strategy
 
-D1 (near-simultaneous MMSI cloning) events are aggregated into **temporal episodes** 
-to avoid overcounting due to AIS sampling density.
+D1 (near-simultaneous MMSI cloning) events are aggregated into temporal episodes
+using a 2-hour merge window.
 
-- Consecutive D1 events are merged into a single episode if they occur within a 2-hour window.
-- The DFSI uses the number of such episodes (`D1 Episodes`) instead of raw event count.
+If consecutive D1 events occur within 2 hours of the current episode end,
+they are treated as one spoofing episode rather than several independent incidents.
 
-This ensures that one physical spoofing incident is not counted multiple times 
-due to high-frequency AIS reporting.
+The DFSI uses the number of D1 episodes instead of the raw D1 event count.
 
 ### D2 quality filtering
 
-D2 (impossible relocation) events are subject to additional validation:
+D2 (impossible relocation) events are additionally checked with a coarse land mask.
 
-- Events with coordinates located on land (based on a coarse land mask)  
-  are flagged as low-quality and excluded from DFSI calculation.
-- Only validated D2 events contribute to the DFSI distance component.
-
-This reduces the impact of corrupted AIS data and coordinate errors.
+- If both points are at sea, the event is considered valid for DFSI.
+- If one or both points fall on land, the event is flagged as suspect.
+- Suspect events are still exported for analysis, but they do not contribute
+  to the DFSI distance component.
 
 ---
 

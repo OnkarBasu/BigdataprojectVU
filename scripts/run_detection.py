@@ -389,21 +389,6 @@ def get_top_loitering_vessel_visualization_data(
     return best_mmsi, rows
 
 
-def attach_loitering_events_to_summaries(
-    global_summaries: dict,
-    loitering_events: list[LoiteringTransferEvent],
-) -> None:
-    """Attach each anomaly B event to both vessels that participate in it."""
-    for event in loitering_events:
-        summary_a = global_summaries.get(event.mmsi_a)
-        if summary_a is not None:
-            summary_a.loitering_transfer_events.append(event)
-
-        summary_b = global_summaries.get(event.mmsi_b)
-        if summary_b is not None and event.mmsi_b != event.mmsi_a:
-            summary_b.loitering_transfer_events.append(event)
-
-
 def merge_ready_results(
     pending_results: dict[int, ChunkProcessingResult],
     next_chunk_id_to_merge: int,

@@ -7,11 +7,6 @@ from typing import Sequence
 
 from src.anomaly_detection import detect_all_pair_anomalies
 from src.anomaly_detection.rules import (
-    DEFAULT_B_BUCKET_SECONDS,
-    DEFAULT_B_MAX_CONTINUATION_GAP_SECONDS,
-    DEFAULT_B_MAX_DISTANCE_KM,
-    DEFAULT_B_MAX_SOG_KNOTS,
-    DEFAULT_B_MIN_DURATION_HOURS,
     _ActiveLoiteringPair,
     _LoiteringPoint,
     _bucketize_timestamp,
@@ -21,6 +16,7 @@ from src.anomaly_detection.rules import (
     _start_active_loitering_pair,
     _update_active_loitering_pair,
 )
+from src.config import DEFAULT_DETECTION_CONFIG, DetectionConfig
 from src.models import AISRecord, ChunkProcessingResult, VesselChunkSummary
 from src.models.events import LoiteringTransferEvent
 from src.models.processing import VesselGlobalSummary
@@ -31,17 +27,11 @@ from src.utils.ports import PortZone
 class BoundaryState:
     """
     Track the latest known record for a vessel while merging chunk results.
-
-    This state is used to detect anomalies that occur across chunk boundaries,
-    where the last record of a vessel in one chunk must be compared with the
-    first record of the same vessel in a later chunk.
     """
 
     last_record: AISRecord
     last_chunk_id: int
     last_sampled_record: AISRecord | None
-
-
 
 
 @dataclass(slots=True)
@@ -53,11 +43,12 @@ class LoiteringState:
     )
     active_pairs: dict[tuple[int, int], _ActiveLoiteringPair] = field(default_factory=dict)
     finished_events: list[LoiteringTransferEvent] = field(default_factory=list)
-    bucket_seconds: int = DEFAULT_B_BUCKET_SECONDS
-    max_distance_km: float = DEFAULT_B_MAX_DISTANCE_KM
-    max_sog_knots: float = DEFAULT_B_MAX_SOG_KNOTS
-    min_duration_hours: float = DEFAULT_B_MIN_DURATION_HOURS
-    max_continuation_gap_seconds: int = DEFAULT_B_MAX_CONTINUATION_GAP_SECONDS
+    bucket_seconds: int = 5 * 60
+    max_distance_km: float = 0.5
+    max_sog_knots: float = 1.0
+    min_duration_hours: float = 2.0
+    max_continuation_gap_seconds: int = 2 * 5 * 60
+    minimum_port_radius_km: float = 0.0
     finalized: bool = False
 
 
@@ -65,21 +56,34 @@ class LoiteringState:
 class MergeState:
     """
     Incremental merge state maintained by the main process.
-
-    Attributes:
-        global_summaries: Fully merged per-vessel summaries.
-        boundary_states: Latest known boundary record for each vessel.
     """
 
     global_summaries: dict[int, VesselGlobalSummary] = field(default_factory=dict)
     boundary_states: dict[int, BoundaryState] = field(default_factory=dict)
     loitering_state: LoiteringState | None = None
+    detection_config: DetectionConfig = field(default_factory=lambda: DEFAULT_DETECTION_CONFIG)
 
 
-def create_merge_state(enable_loitering_detection: bool = False) -> MergeState:
+def create_merge_state(
+    detection_config: DetectionConfig = DEFAULT_DETECTION_CONFIG,
+    enable_loitering_detection: bool = False,
+) -> MergeState:
     """Create an empty merge state for incremental chunk merging."""
+    loitering_state = None
+    if enable_loitering_detection:
+        loitering_cfg = detection_config.loitering
+        loitering_state = LoiteringState(
+            bucket_seconds=loitering_cfg.bucket_seconds,
+            max_distance_km=loitering_cfg.max_distance_km,
+            max_sog_knots=loitering_cfg.max_sog_knots,
+            min_duration_hours=loitering_cfg.min_duration_hours,
+            max_continuation_gap_seconds=loitering_cfg.max_continuation_gap_seconds,
+            minimum_port_radius_km=loitering_cfg.minimum_port_radius_km,
+        )
+
     return MergeState(
-        loitering_state=LoiteringState() if enable_loitering_detection else None,
+        loitering_state=loitering_state,
+        detection_config=detection_config,
     )
 
 
@@ -87,7 +91,6 @@ def merge_chunk_result_into_state(
     merge_state: MergeState,
     chunk_result: ChunkProcessingResult,
     port_zones: Sequence[PortZone] | None = None,
-    minimum_port_radius_km: float = 0.0,
 ) -> None:
     """Merge a single chunk result into the incremental global state."""
     latest_sampled_timestamp: datetime | None = None
@@ -108,7 +111,7 @@ def merge_chunk_result_into_state(
             current_chunk_id=chunk_result.chunk_id,
             current_summary=chunk_summary,
             port_zones=port_zones,
-            minimum_port_radius_km=minimum_port_radius_km,
+            detection_config=merge_state.detection_config,
         )
 
         if chunk_summary.sampled_records:
@@ -120,7 +123,6 @@ def merge_chunk_result_into_state(
                 merge_state=merge_state,
                 sampled_records=chunk_summary.sampled_records,
                 port_zones=port_zones,
-                minimum_port_radius_km=minimum_port_radius_km,
             )
 
         merge_state.boundary_states[mmsi] = BoundaryState(
@@ -148,17 +150,20 @@ def merge_chunk_result_into_state(
 def merge_chunk_results(
     chunk_results: list[ChunkProcessingResult],
     port_zones: Sequence[PortZone] | None = None,
-    minimum_port_radius_km: float = 0.0,
+    detection_config: DetectionConfig = DEFAULT_DETECTION_CONFIG,
+    enable_loitering_detection: bool = False,
 ) -> dict[int, VesselGlobalSummary]:
     """Merge per-chunk worker results into global per-vessel summaries."""
-    merge_state = create_merge_state()
+    merge_state = create_merge_state(
+        detection_config=detection_config,
+        enable_loitering_detection=enable_loitering_detection,
+    )
 
     for chunk_result in sorted(chunk_results, key=lambda result: result.chunk_id):
         merge_chunk_result_into_state(
             merge_state=merge_state,
             chunk_result=chunk_result,
             port_zones=port_zones,
-            minimum_port_radius_km=minimum_port_radius_km,
         )
 
     return merge_state.global_summaries
@@ -190,7 +195,7 @@ def _merge_boundary_anomalies(
     current_chunk_id: int,
     current_summary: VesselChunkSummary,
     port_zones: Sequence[PortZone] | None = None,
-    minimum_port_radius_km: float = 0.0,
+    detection_config: DetectionConfig = DEFAULT_DETECTION_CONFIG,
 ) -> None:
     """Detect and merge anomalies spanning across chunk boundaries."""
     if boundary_state is None:
@@ -199,18 +204,15 @@ def _merge_boundary_anomalies(
     if boundary_state.last_chunk_id >= current_chunk_id:
         return
 
-    if (
-            boundary_state.last_sampled_record is not None
-            and current_summary.sampled_records
-    ):
+    if boundary_state.last_sampled_record is not None and current_summary.sampled_records:
         prev_sampled = boundary_state.last_sampled_record
         curr_sampled = current_summary.sampled_records[0]
 
         going_dark_event, draft_change_event, _ = detect_all_pair_anomalies(
             previous=prev_sampled,
             current=curr_sampled,
+            config=detection_config,
             port_zones=port_zones,
-            minimum_port_radius_km=minimum_port_radius_km,
         )
 
         if going_dark_event is not None:
@@ -230,8 +232,8 @@ def _merge_boundary_anomalies(
     _, _, teleportation_event = detect_all_pair_anomalies(
         previous=previous,
         current=current,
+        config=detection_config,
         port_zones=port_zones,
-        minimum_port_radius_km=minimum_port_radius_km,
     )
 
     if teleportation_event is not None:
@@ -276,7 +278,6 @@ def _merge_loitering_sampled_records(
     merge_state: MergeState,
     sampled_records: list[AISRecord],
     port_zones: Sequence[PortZone] | None,
-    minimum_port_radius_km: float,
 ) -> None:
     """Convert sampled vessel records into incremental anomaly B bucket state."""
     loitering_state = merge_state.loitering_state
@@ -288,7 +289,7 @@ def _merge_loitering_sampled_records(
             record=record,
             port_zones=port_zones,
             max_sog_knots=loitering_state.max_sog_knots,
-            minimum_port_radius_km=minimum_port_radius_km,
+            minimum_port_radius_km=loitering_state.minimum_port_radius_km,
         )
         if point is None:
             continue

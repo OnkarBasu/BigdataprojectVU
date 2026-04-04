@@ -11,6 +11,12 @@ from src.anomaly_detection import (
     finalize_loitering_detection,
     merge_chunk_result_into_state,
 )
+from src.config import (
+    DEFAULT_DETECTION_CONFIG,
+    DEFAULT_RUN_CONFIG,
+    DetectionConfig,
+    RunConfig,
+)
 from src.models import ChunkProcessingResult
 from src.parallel import process_chunk, worker_init
 from src.performance import get_current_process, get_rss_mb
@@ -78,21 +84,17 @@ def merge_ready_results(
 
 def run_detection_pipeline(
     input_files: list[Path],
-    chunk_size: int,
-    workers: int,
-    encoding: str = "utf-8",
-    enable_loitering_detection: bool = True,
-    memory_output_file: Path = Path("data/output/memory_profile.csv"),
-    verbose: bool = True,
+    run_config: RunConfig = DEFAULT_RUN_CONFIG,
+    detection_config: DetectionConfig = DEFAULT_DETECTION_CONFIG,
 ) -> DetectionPipelineResult:
     """
     Run the full streaming + multiprocessing detection pipeline and return
     structured results without exporting final anomaly CSV files.
     """
-    if chunk_size <= 0:
+    if run_config.chunk_size <= 0:
         raise ValueError("chunk_size must be greater than 0")
 
-    if workers <= 0:
+    if run_config.workers <= 0:
         raise ValueError("workers must be greater than 0")
 
     for input_file in input_files:
@@ -115,14 +117,15 @@ def run_detection_pipeline(
     )
 
     merge_state = create_merge_state(
-        enable_loitering_detection=enable_loitering_detection,
+        detection_config=detection_config,
+        enable_loitering_detection=run_config.enable_loitering_detection,
     )
     port_zones = load_port_zones()
 
     tasks = stream_csv_files_in_chunks(
         file_paths=input_files,
-        chunk_size=chunk_size,
-        encoding=encoding,
+        chunk_size=run_config.chunk_size,
+        encoding=run_config.encoding,
     )
 
     pending_results: dict[int, ChunkProcessingResult] = {}
@@ -131,7 +134,11 @@ def run_detection_pipeline(
     memory_monitor.start()
     memory_monitor.take_sample(event_label="pipeline_started")
 
-    with Pool(processes=workers, initializer=worker_init) as pool:
+    with Pool(
+        processes=run_config.workers,
+        initializer=worker_init,
+        initargs=(detection_config,),
+    ) as pool:
         for chunk_result in pool.imap_unordered(process_chunk, tasks, chunksize=1):
             pending_results[chunk_result.chunk_id] = chunk_result
             memory_monitor.take_sample(event_label="worker_result_received")
@@ -148,7 +155,7 @@ def run_detection_pipeline(
                 processed_valid_records=processed_valid_records,
                 completed_chunks=completed_chunks,
                 process=process,
-                verbose=verbose,
+                verbose=run_config.verbose,
             )
             memory_monitor.take_sample(event_label="after_merge")
 
@@ -164,7 +171,7 @@ def run_detection_pipeline(
         processed_valid_records=processed_valid_records,
         completed_chunks=completed_chunks,
         process=process,
-        verbose=verbose,
+        verbose=run_config.verbose,
     )
     memory_monitor.take_sample(event_label="after_final_merge")
 
@@ -174,7 +181,7 @@ def run_detection_pipeline(
 
     global_summaries = merge_state.global_summaries
 
-    if enable_loitering_detection:
+    if run_config.enable_loitering_detection:
         loitering_events = finalize_loitering_detection(merge_state)
     else:
         loitering_events = []
@@ -189,10 +196,10 @@ def run_detection_pipeline(
     memory_monitor.take_sample(event_label="before_final_save")
     memory_monitor.stop()
 
-    worker_memory_output_file = memory_output_file.with_name("worker_memory_profile.csv")
-    memory_summary_output_file = memory_output_file.with_name("memory_summary.csv")
+    worker_memory_output_file = run_config.memory_output_file.with_name("worker_memory_profile.csv")
+    memory_summary_output_file = run_config.memory_output_file.with_name("memory_summary.csv")
 
-    memory_monitor.save_aggregated_csv(memory_output_file)
+    memory_monitor.save_aggregated_csv(run_config.memory_output_file)
     memory_monitor.save_worker_csv(worker_memory_output_file)
     memory_monitor.save_summary_csv(memory_summary_output_file)
 
@@ -209,7 +216,7 @@ def run_detection_pipeline(
         completed_chunks=completed_chunks,
         total_runtime_sec=total_time,
         final_memory_rss_mb=final_memory_rss_mb,
-        memory_output_file=memory_output_file,
+        memory_output_file=run_config.memory_output_file,
         worker_memory_output_file=worker_memory_output_file,
         memory_summary_output_file=memory_summary_output_file,
         memory_summary=memory_summary,

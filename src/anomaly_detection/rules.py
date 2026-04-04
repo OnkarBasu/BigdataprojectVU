@@ -23,24 +23,16 @@ from src.models import (
 )
 from src.utils.geo import calculate_distance
 from src.utils.ports import PortZone, is_blackout_at_sea, is_near_any_port
+from src.config import (
+    DEFAULT_DETECTION_CONFIG,
+    DetectionConfig,
+    DraftChangeConfig,
+    GoingDarkConfig,
+    TeleportationConfig,
+)
 
-
-HOURS_IN_DAY = 24.0
-MINUTES_IN_HOUR = 60.0
 SECONDS_IN_HOUR = 3600.0
 KM_PER_NAUTICAL_MILE = 1.852
-DEFAULT_D1_MAX_GAP_HOURS = 0.5
-DEFAULT_D2_MAX_GAP_HOURS = 24.0
-DEFAULT_D_MIN_GAP_SECONDS = 30.0
-DEFAULT_D_MIN_DISTANCE_KM = 1.0
-
-DEFAULT_B_MAX_DISTANCE_KM = 0.5
-DEFAULT_B_MAX_SOG_KNOTS = 1.0
-DEFAULT_B_MIN_DURATION_HOURS = 2.0
-DEFAULT_B_BUCKET_SECONDS = 5 * 60
-DEFAULT_B_MAX_CONTINUATION_GAP_SECONDS = 2 * DEFAULT_B_BUCKET_SECONDS
-
-DEFAULT_D2_PORT_PROXIMITY_KM = 15.0
 NATURAL_EARTH_LOWRES_PATH = Path(
     "/opt/pyvenv/lib/python3.13/site-packages/pyogrio/tests/fixtures/"
     "naturalearth_lowres/naturalearth_lowres.shp"
@@ -106,7 +98,7 @@ def _classify_d2_quality(
     previous: AISRecord,
     current: AISRecord,
     port_zones: Sequence[PortZone] | None,
-    minimum_port_radius_km: float,
+    teleportation_config: TeleportationConfig,
 ) -> tuple[bool | None, bool | None, TeleportationQualityFlag, bool]:
     """Classify D2 event quality and whether it should contribute to DFSI."""
     start_on_land = _is_point_on_land(previous.latitude, previous.longitude)
@@ -121,7 +113,10 @@ def _classify_d2_quality(
     if port_zones is None:
         return start_on_land, end_on_land, "suspect_land_point", False
 
-    port_radius_km = max(minimum_port_radius_km, DEFAULT_D2_PORT_PROXIMITY_KM)
+    port_radius_km = max(
+        teleportation_config.minimum_port_radius_km,
+        teleportation_config.d2_port_proximity_km,
+    )
 
     start_near_port = is_near_any_port(
         latitude=previous.latitude,
@@ -205,8 +200,7 @@ def kilometers_to_nautical_miles(distance_km: float) -> float:
 def detect_going_dark(
     previous: AISRecord,
     current: AISRecord,
-    min_gap_hours: float = 4.0,
-    min_distance_km: float = 1.0,
+    config: GoingDarkConfig = DEFAULT_DETECTION_CONFIG.going_dark,
 ) -> GoingDarkEvent | None:
     """
     Detect anomaly A ("Going Dark") for a pair of consecutive AIS records.
@@ -219,7 +213,7 @@ def detect_going_dark(
     _validate_same_mmsi(previous, current)
 
     gap_hours = calculate_time_gap_hours(previous, current)
-    if gap_hours <= min_gap_hours:
+    if gap_hours <= config.min_gap_hours:
         return None
 
     distance_km = calculate_distance(
@@ -228,7 +222,7 @@ def detect_going_dark(
         current.latitude,
         current.longitude,
     )
-    if distance_km <= min_distance_km:
+    if distance_km <= config.min_distance_km:
         return None
 
     return GoingDarkEvent(
@@ -247,10 +241,8 @@ def detect_going_dark(
 def detect_draft_change(
     previous: AISRecord,
     current: AISRecord,
-    min_gap_hours: float = 2.0,
-    min_relative_change: float = 0.05,
+    config: DraftChangeConfig = DEFAULT_DETECTION_CONFIG.draft_change,
     port_zones: Sequence[PortZone] | None = None,
-    minimum_port_radius_km: float = 0.0,
 ) -> DraftChangeEvent | None:
     """
     Detect anomaly C ("Draft Changes at Sea").
@@ -266,7 +258,7 @@ def detect_draft_change(
     _validate_same_mmsi(previous, current)
 
     gap_hours = calculate_time_gap_hours(previous, current)
-    if gap_hours <= min_gap_hours:
+    if gap_hours <= config.min_gap_hours:
         return None
 
     if previous.draught is None or current.draught is None:
@@ -278,7 +270,7 @@ def detect_draft_change(
     draught_change_abs = abs(current.draught - previous.draught)
     draught_change_ratio = draught_change_abs / previous.draught
 
-    if draught_change_ratio <= min_relative_change:
+    if draught_change_ratio <= config.min_relative_change:
         return None
 
     if port_zones is not None and not is_blackout_at_sea(
@@ -287,7 +279,7 @@ def detect_draft_change(
         end_latitude=current.latitude,
         end_longitude=current.longitude,
         port_zones=port_zones,
-        minimum_radius_km=minimum_port_radius_km,
+        minimum_radius_km=config.minimum_port_radius_km,
     ):
         return None
 
@@ -306,13 +298,8 @@ def detect_draft_change(
 def detect_teleportation(
     previous: AISRecord,
     current: AISRecord,
-    max_speed_knots: float = 60.0,
-    d1_max_gap_hours: float = DEFAULT_D1_MAX_GAP_HOURS,
-    d2_max_gap_hours: float = DEFAULT_D2_MAX_GAP_HOURS,
-    min_gap_seconds: float = DEFAULT_D_MIN_GAP_SECONDS,
-    min_distance_km: float = DEFAULT_D_MIN_DISTANCE_KM,
+    config: TeleportationConfig = DEFAULT_DETECTION_CONFIG.teleportation,
     port_zones: Sequence[PortZone] | None = None,
-    minimum_port_radius_km: float = 0.0,
 ) -> TeleportationEvent | None:
     """
     Detect anomaly D for a pair of AIS records.
@@ -330,7 +317,7 @@ def detect_teleportation(
 
     gap_hours = calculate_time_gap_hours(previous, current)
     gap_seconds = gap_hours * SECONDS_IN_HOUR
-    if gap_seconds < min_gap_seconds:
+    if gap_seconds < config.min_gap_seconds:
         return None
 
     if _is_zero_coordinate(previous.latitude, previous.longitude):
@@ -344,14 +331,14 @@ def detect_teleportation(
         current.latitude,
         current.longitude,
     )
-    if distance_km <= min_distance_km:
+    if distance_km <= config.min_distance_km:
         return None
 
     implied_speed_knots = calculate_implied_speed_knots(distance_km, gap_hours)
-    if implied_speed_knots <= max_speed_knots:
+    if implied_speed_knots <= config.max_speed_knots:
         return None
 
-    if gap_hours <= d1_max_gap_hours:
+    if gap_hours <= config.d1_max_gap_hours:
         return TeleportationEvent(
             mmsi=previous.mmsi,
             subtype="D1",
@@ -366,14 +353,14 @@ def detect_teleportation(
             implied_speed_knots=implied_speed_knots,
         )
 
-    if gap_hours > d2_max_gap_hours:
+    if gap_hours > config.d2_max_gap_hours:
         return None
 
     start_on_land, end_on_land, quality_flag, counts_for_dfsi = _classify_d2_quality(
         previous=previous,
         current=current,
         port_zones=port_zones,
-        minimum_port_radius_km=minimum_port_radius_km,
+        teleportation_config=config,
     )
 
     return TeleportationEvent(
@@ -398,17 +385,8 @@ def detect_teleportation(
 def detect_all_pair_anomalies(
     previous: AISRecord,
     current: AISRecord,
-    going_dark_min_gap_hours: float = 4.0,
-    going_dark_min_distance_km: float = 1.0,
-    draft_change_min_gap_hours: float = 2.0,
-    draft_change_min_relative_change: float = 0.05,
-    teleportation_max_speed_knots: float = 60.0,
-    teleportation_d1_max_gap_hours: float = DEFAULT_D1_MAX_GAP_HOURS,
-    teleportation_d2_max_gap_hours: float = DEFAULT_D2_MAX_GAP_HOURS,
-    teleportation_min_gap_seconds: float = DEFAULT_D_MIN_GAP_SECONDS,
-    teleportation_min_distance_km: float = DEFAULT_D_MIN_DISTANCE_KM,
+    config: DetectionConfig = DEFAULT_DETECTION_CONFIG,
     port_zones: Sequence[PortZone] | None = None,
-    minimum_port_radius_km: float = 0.0,
 ) -> tuple[GoingDarkEvent | None, DraftChangeEvent | None, TeleportationEvent | None]:
     """
     Detect all supported pairwise anomalies for two AIS records.
@@ -419,27 +397,19 @@ def detect_all_pair_anomalies(
     going_dark_event = detect_going_dark(
         previous=previous,
         current=current,
-        min_gap_hours=going_dark_min_gap_hours,
-        min_distance_km=going_dark_min_distance_km,
+        config=config.going_dark,
     )
     draft_change_event = detect_draft_change(
         previous=previous,
         current=current,
-        min_gap_hours=draft_change_min_gap_hours,
-        min_relative_change=draft_change_min_relative_change,
+        config=config.draft_change,
         port_zones=port_zones,
-        minimum_port_radius_km=minimum_port_radius_km,
     )
     teleportation_event = detect_teleportation(
         previous=previous,
         current=current,
-        max_speed_knots=teleportation_max_speed_knots,
-        d1_max_gap_hours=teleportation_d1_max_gap_hours,
-        d2_max_gap_hours=teleportation_d2_max_gap_hours,
-        min_gap_seconds=teleportation_min_gap_seconds,
-        min_distance_km=teleportation_min_distance_km,
+        config=config.teleportation,
         port_zones=port_zones,
-        minimum_port_radius_km=minimum_port_radius_km,
     )
 
     return going_dark_event, draft_change_event, teleportation_event

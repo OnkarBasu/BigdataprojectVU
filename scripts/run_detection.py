@@ -15,6 +15,7 @@ from src.output import (
     write_loitering_visualization_csv,
 )
 from src.pipeline import run_detection_pipeline
+from src.config import DEFAULT_DETECTION_CONFIG
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -191,6 +192,7 @@ def main() -> None:
         encoding=encoding,
         enable_loitering_detection=enable_loitering_detection,
         memory_output_file=memory_output_file,
+        detection_config=DEFAULT_DETECTION_CONFIG,
         verbose=True,
     )
 

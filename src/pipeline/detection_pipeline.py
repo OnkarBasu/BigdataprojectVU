@@ -11,6 +11,7 @@ from src.anomaly_detection import (
     finalize_loitering_detection,
     merge_chunk_result_into_state,
 )
+from src.config import DEFAULT_DETECTION_CONFIG, DetectionConfig
 from src.models import ChunkProcessingResult
 from src.parallel import process_chunk, worker_init
 from src.performance import get_current_process, get_rss_mb
@@ -83,6 +84,7 @@ def run_detection_pipeline(
     encoding: str = "utf-8",
     enable_loitering_detection: bool = True,
     memory_output_file: Path = Path("data/output/memory_profile.csv"),
+    detection_config: DetectionConfig = DEFAULT_DETECTION_CONFIG,
     verbose: bool = True,
 ) -> DetectionPipelineResult:
     """
@@ -115,6 +117,7 @@ def run_detection_pipeline(
     )
 
     merge_state = create_merge_state(
+        detection_config=detection_config,
         enable_loitering_detection=enable_loitering_detection,
     )
     port_zones = load_port_zones()
@@ -131,7 +134,11 @@ def run_detection_pipeline(
     memory_monitor.start()
     memory_monitor.take_sample(event_label="pipeline_started")
 
-    with Pool(processes=workers, initializer=worker_init) as pool:
+    with Pool(
+        processes=workers,
+        initializer=worker_init,
+        initargs=(detection_config,),
+    ) as pool:
         for chunk_result in pool.imap_unordered(process_chunk, tasks, chunksize=1):
             pending_results[chunk_result.chunk_id] = chunk_result
             memory_monitor.take_sample(event_label="worker_result_received")

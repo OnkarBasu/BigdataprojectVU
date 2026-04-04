@@ -304,6 +304,7 @@ pip install -r requirements.txt
 
 ```bash
 python -m scripts.run_detection data/sample/2025-09-01_head_100_000_rows.csv```
+```
 
 ### Example
 
@@ -327,20 +328,20 @@ python -m scripts.run_detection \
 
 ## Main arguments
 
-| Argument | Description |
-|---|---|
-| `input_files` | One or more AIS CSV files |
-| `--chunk-size` | Number of raw AIS rows per chunk |
-| `--workers` | Number of worker processes |
-| `--encoding` | Input file encoding |
-| `--top` | Number of top vessels to print by DFSI |
-| `--output` | Output path for final DFSI CSV |
-| `--memory-output` | Output path for aggregated memory profile |
-| `--teleportation-d1-viz-output` | Output path for top D1 vessel visualization CSV |
-| `--teleportation-d2-viz-output` | Output path for top D2 vessel visualization CSV |
-| `--going-dark-viz-output` | Output path for top anomaly A vessel visualization CSV |
-| `--loitering-viz-output` | Output path for top anomaly B vessel visualization CSV |
-| `--disable-loitering-detection` | Disable anomaly B detection for performance-oriented runs |
+| Argument | Description | Default |
+|---|---|---|
+| `input_files` | One or more AIS CSV files | required |
+| `--chunk-size` | Number of raw AIS rows per chunk | `100000` |
+| `--workers` | Number of worker processes | `4` |
+| `--encoding` | Input file encoding | `"utf-8"` |
+| `--top` | Number of top vessels to print by DFSI | `10` |
+| `--output` | Output path for final DFSI CSV | `data/output/dfsi_results.csv` |
+| `--memory-output` | Output path for aggregated memory profile | `data/output/memory_profile.csv` |
+| `--teleportation-d1-viz-output` | Output path for top D1 vessel visualization CSV | `data/output/top_teleportation_d1_vessel_map.csv` |
+| `--teleportation-d2-viz-output` | Output path for top D2 vessel visualization CSV | `data/output/top_teleportation_d2_vessel_map.csv` |
+| `--going-dark-viz-output` | Output path for top anomaly A vessel visualization CSV | `data/output/top_going_dark_vessel_map.csv` |
+| `--loitering-viz-output` | Output path for top anomaly B vessel visualization CSV | `data/output/top_loitering_vessel_map.csv` |
+| `--disable-loitering-detection` | Disable anomaly B detection (performance mode) | `False` (enabled by default) |
 
 ---
 

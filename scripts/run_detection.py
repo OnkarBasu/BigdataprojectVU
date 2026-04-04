@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import time
 from multiprocessing import Pool
 from pathlib import Path
@@ -11,7 +10,6 @@ from src.anomaly_detection import (
     create_merge_state,
     get_top_going_dark_vessel_visualization_data,
     merge_chunk_result_into_state,
-    calculate_d1_episode_count,
     finalize_loitering_detection
 )
 from src.anomaly_detection.rules import (
@@ -24,6 +22,12 @@ from src.performance.memory_profile import MemoryMonitor
 from src.streaming import stream_csv_files_in_chunks
 from src.models import ChunkProcessingResult
 from src.utils import load_port_zones
+from src.output import (
+    write_results_csv,
+    write_teleportation_visualization_csv,
+    write_going_dark_visualization_csv,
+    write_loitering_visualization_csv,
+)
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -107,235 +111,6 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Path to output CSV of top Anomaly B vessel coordinates for map visualization.",
     )
     return parser
-
-
-def write_results_csv(
-    output_file: Path,
-    ranked_scores: list[tuple[int, float]],
-    global_summaries: dict,
-) -> None:
-    """
-    Write vessel DFSI results to a CSV file.
-
-    Args:
-        output_file: Path to the output CSV file.
-        ranked_scores: Ranked list of (MMSI, DFSI) pairs.
-        global_summaries: Final merged vessel summaries keyed by MMSI.
-    """
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    with output_file.open("w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.writer(csvfile)
-
-        writer.writerow(
-            [
-                "MMSI",
-                "DFSI",
-                "record_count",
-                "max_gap_hours",
-                "impossible_relocation_km_d2",
-                "draft_change_count",
-                "going_dark_events",
-                "draft_change_events",
-                "teleportation_events",
-                "teleportation_d1_events",
-                "d1_episode_count",
-                "teleportation_d2_events",
-                "teleportation_d2_valid_events",
-                "teleportation_d2_flagged_events",
-                "loitering_transfer_events",
-            ]
-        )
-
-        for mmsi, score in ranked_scores:
-            summary = global_summaries[mmsi]
-
-            writer.writerow(
-                [
-                    mmsi,
-                    f"{score:.6f}",
-                    summary.record_count,
-                    f"{summary.max_gap_hours:.3f}",
-                    f"{summary.total_impossible_jump_km:.3f}",
-                    summary.draft_change_count,
-                    len(summary.going_dark_events),
-                    len(summary.draft_change_events),
-                    len(summary.teleportation_events),
-                    len(summary.teleportation_d1_events),
-                    calculate_d1_episode_count(summary),
-                    len(summary.teleportation_d2_events),
-                    sum(1 for event in summary.teleportation_d2_events if event.counts_for_dfsi),
-                    sum(1 for event in summary.teleportation_d2_events if not event.counts_for_dfsi),
-                    len(summary.loitering_transfer_events),
-                ]
-            )
-
-
-def write_teleportation_visualization_csv(
-    output_file: Path,
-    mmsi: int,
-    rows: list[dict[str, int | float | str]],
-) -> None:
-    """
-    Write the top Anomaly D vessel's teleportation coordinates for map visualization.
-
-    Each row represents one impossible jump (origin -> destination) for the
-    vessel with the highest number of teleportation events.
-
-    Args:
-        output_file: Path to the output CSV file.
-        mmsi: Vessel MMSI identifier.
-        rows: List of dicts with lat_origin, lon_origin, lat_destination,
-            lon_destination, event_index, implied_speed_knots, distance_km.
-    """
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    columns = [
-        "mmsi",
-        "event_index",
-        "subtype",
-        "point_a_timestamp",
-        "point_a_latitude",
-        "point_a_longitude",
-        "point_b_timestamp",
-        "point_b_latitude",
-        "point_b_longitude",
-        "gap_hours",
-        "implied_speed_knots",
-        "distance_km",
-        "point_a_on_land",
-        "point_b_on_land",
-        "quality_flag",
-        "counts_for_dfsi",
-    ]
-
-    with output_file.open("w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(columns)
-        for row in rows:
-            writer.writerow(
-                [
-                    row["mmsi"],
-                    row["event_index"],
-                    row["subtype"],
-                    row["point_a_timestamp"],
-                    f"{row['point_a_latitude']:.6f}",
-                    f"{row['point_a_longitude']:.6f}",
-                    row["point_b_timestamp"],
-                    f"{row['point_b_latitude']:.6f}",
-                    f"{row['point_b_longitude']:.6f}",
-                    f"{row['gap_hours']:.6f}",
-                    f"{row['implied_speed_knots']:.3f}",
-                    f"{row['distance_km']:.3f}",
-                    row["point_a_on_land"],
-                    row["point_b_on_land"],
-                    row["quality_flag"],
-                    row["counts_for_dfsi"],
-                ]
-            )
-
-
-def write_going_dark_visualization_csv(
-    output_file: Path,
-    mmsi: int,
-    rows: list[dict[str, int | float]],
-) -> None:
-    """
-    Write the top Anomaly A vessel's going dark coordinates for map visualization.
-
-    Each row represents one going dark event (origin -> destination) for the
-    vessel with the highest number of going dark events.
-
-    Args:
-        output_file: Path to the output CSV file.
-        mmsi: Vessel MMSI identifier.
-        rows: List of dicts with lat_origin, lon_origin, lat_destination,
-            lon_destination, event_index, gap_hours, distance_km.
-    """
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    columns = [
-        "mmsi",
-        "event_index",
-        "lat_origin",
-        "lon_origin",
-        "lat_destination",
-        "lon_destination",
-        "gap_hours",
-        "distance_km",
-    ]
-
-    with output_file.open("w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(columns)
-        for row in rows:
-            writer.writerow(
-                [
-                    row["mmsi"],
-                    row["event_index"],
-                    f"{row['lat_origin']:.6f}",
-                    f"{row['lon_origin']:.6f}",
-                    f"{row['lat_destination']:.6f}",
-                    f"{row['lon_destination']:.6f}",
-                    f"{row['gap_hours']:.3f}",
-                    f"{row['distance_km']:.3f}",
-                ]
-            )
-
-
-def write_loitering_visualization_csv(
-    output_file: Path,
-    mmsi: int,
-    rows: list[dict[str, int | float | str]],
-) -> None:
-    """Write the top Anomaly B vessel's paired coordinates for map visualization."""
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    columns = [
-        "focus_mmsi",
-        "event_index",
-        "mmsi_a",
-        "mmsi_b",
-        "start_timestamp",
-        "end_timestamp",
-        "duration_hours",
-        "start_lat_a",
-        "start_lon_a",
-        "start_lat_b",
-        "start_lon_b",
-        "end_lat_a",
-        "end_lon_a",
-        "end_lat_b",
-        "end_lon_b",
-        "min_distance_km",
-        "avg_distance_km",
-    ]
-
-    with output_file.open("w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(columns)
-        for row in rows:
-            writer.writerow(
-                [
-                    row["focus_mmsi"],
-                    row["event_index"],
-                    row["mmsi_a"],
-                    row["mmsi_b"],
-                    row["start_timestamp"],
-                    row["end_timestamp"],
-                    f"{row['duration_hours']:.3f}",
-                    f"{row['start_lat_a']:.6f}",
-                    f"{row['start_lon_a']:.6f}",
-                    f"{row['start_lat_b']:.6f}",
-                    f"{row['start_lon_b']:.6f}",
-                    f"{row['end_lat_a']:.6f}",
-                    f"{row['end_lon_a']:.6f}",
-                    f"{row['end_lat_b']:.6f}",
-                    f"{row['end_lon_b']:.6f}",
-                    f"{row['min_distance_km']:.3f}",
-                    f"{row['avg_distance_km']:.3f}",
-                ]
-            )
 
 
 def get_top_loitering_vessel_visualization_data(

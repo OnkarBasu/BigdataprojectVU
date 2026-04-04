@@ -1,6 +1,15 @@
 # Core (used by run_detection, etc.)
 psutil>=5.9.0
 
+# Geospatial anomaly validation
+geopandas>=0.14.0
+shapely>=2.0.0
+pyogrio>=0.7.0
+
+# Testing
+pytest>=8.0.0
+
 # Visualization (result_plots.py)
 pandas>=1.5.0
+matplotlib>=3.8.0
 folium>=0.14.0

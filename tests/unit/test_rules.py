@@ -308,9 +308,17 @@ def test_detect_teleportation_returns_d2_event_for_longer_gap_and_impossible_spe
     make_record,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    def fake_classify_d2_quality(
+        previous,
+        current,
+        port_zones,
+        teleportation_config,
+    ):
+        return (False, False, "ok", True)
+
     monkeypatch.setattr(
         "src.anomaly_detection.rules._classify_d2_quality",
-        lambda _previous, _current, _port_zones, _teleportation_config: (False, False, "ok", True),
+        fake_classify_d2_quality,
     )
 
     previous = make_record(
@@ -452,14 +460,17 @@ def test_detect_teleportation_propagates_d2_quality_fields(
     make_record,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    def fake_classify_d2_quality(
+        previous,
+        current,
+        port_zones,
+        teleportation_config,
+    ):
+        return (True, False, "suspect_land_point", False)
+
     monkeypatch.setattr(
         "src.anomaly_detection.rules._classify_d2_quality",
-        lambda _previous, _current, _port_zones, _teleportation_config: (
-            True,
-            False,
-            "suspect_land_point",
-            False,
-        ),
+        fake_classify_d2_quality,
     )
 
     previous = make_record(
@@ -511,17 +522,26 @@ def test_detect_all_pair_anomalies_returns_tuple_with_expected_components(
     expected_draft_change = object()
     expected_teleportation = object()
 
+    def fake_detect_going_dark(previous, current, config):
+        return expected_going_dark
+
+    def fake_detect_draft_change(previous, current, config, port_zones):
+        return expected_draft_change
+
+    def fake_detect_teleportation(previous, current, config, port_zones):
+        return expected_teleportation
+
     monkeypatch.setattr(
         "src.anomaly_detection.rules.detect_going_dark",
-        lambda _previous, _current, _config: expected_going_dark,
+        fake_detect_going_dark,
     )
     monkeypatch.setattr(
         "src.anomaly_detection.rules.detect_draft_change",
-        lambda _previous, _current, _config, _port_zones: expected_draft_change,
+        fake_detect_draft_change,
     )
     monkeypatch.setattr(
         "src.anomaly_detection.rules.detect_teleportation",
-        lambda _previous, _current, _config, _port_zones: expected_teleportation,
+        fake_detect_teleportation,
     )
 
     config = DetectionConfig()

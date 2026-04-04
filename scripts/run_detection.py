@@ -23,7 +23,6 @@ from src.performance import get_current_process, get_rss_mb
 from src.performance.memory_profile import MemoryMonitor
 from src.streaming import stream_csv_files_in_chunks
 from src.models import ChunkProcessingResult
-from src.models.events import LoiteringTransferEvent
 from src.utils import load_port_zones
 
 

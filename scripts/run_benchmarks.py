@@ -15,7 +15,7 @@ CHUNK_SIZES = [10000, 50000, 100000, 200000, 500000, 1000000]
 
 INPUT_FILE1 = Path("data/full/aisdk-2025-08-31.csv")
 INPUT_FILE2 = Path("data/full/aisdk-2025-09-01.csv")
-OUTPUT_BASE = Path("data/output")
+OUTPUT_BASE = Path("../data/output")
 
 # Validate input files
 if not INPUT_FILE1.exists():

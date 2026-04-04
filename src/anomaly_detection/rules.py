@@ -23,7 +23,7 @@ from src.models import (
 )
 from src.utils.geo import calculate_distance
 from src.utils.ports import PortZone, is_blackout_at_sea, is_near_any_port
-from src.detection_config import (
+from config.detection_config import (
     DEFAULT_DETECTION_CONFIG,
     DetectionConfig,
     DraftChangeConfig,

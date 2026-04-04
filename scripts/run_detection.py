@@ -8,14 +8,14 @@ from src.anomaly_detection.rules import (
     get_top_teleportation_d1_vessel_visualization_data,
     get_top_teleportation_d2_vessel_visualization_data,
 )
+from src.config import DEFAULT_DETECTION_CONFIG, RunConfig
 from src.output import (
-    write_results_csv,
-    write_teleportation_visualization_csv,
     write_going_dark_visualization_csv,
     write_loitering_visualization_csv,
+    write_results_csv,
+    write_teleportation_visualization_csv,
 )
 from src.pipeline import run_detection_pipeline
-from src.detection_config import DEFAULT_DETECTION_CONFIG
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -159,17 +159,21 @@ def main() -> None:
     args = parser.parse_args()
 
     input_files: list[Path] = args.input_files
-    chunk_size: int = args.chunk_size
-    workers: int = args.workers
-    encoding: str = args.encoding
     top_n: int = args.top
     output_file: Path = args.output
-    memory_output_file: Path = args.memory_output
     teleportation_d1_viz_output: Path = args.teleportation_d1_viz_output
     teleportation_d2_viz_output: Path = args.teleportation_d2_viz_output
     going_dark_viz_output: Path = args.going_dark_viz_output
     loitering_viz_output: Path = args.loitering_viz_output
-    enable_loitering_detection: bool = not args.disable_loitering_detection
+
+    run_config = RunConfig(
+        chunk_size=args.chunk_size,
+        workers=args.workers,
+        encoding=args.encoding,
+        enable_loitering_detection=not args.disable_loitering_detection,
+        memory_output_file=args.memory_output,
+        verbose=True,
+    )
 
     print("=" * 80)
     print("SHADOW FLEET DETECTION")
@@ -177,23 +181,18 @@ def main() -> None:
     print("Input files:")
     for input_file in input_files:
         print(f"  - {input_file}")
-    print(f"Chunk size: {chunk_size}")
-    print(f"Workers:    {workers}")
+    print(f"Chunk size: {run_config.chunk_size}")
+    print(f"Workers:    {run_config.workers}")
     print(
         "Loitering detection: "
-        f"{'enabled' if enable_loitering_detection else 'disabled (performance mode)'}"
+        f"{'enabled' if run_config.enable_loitering_detection else 'disabled (performance mode)'}"
     )
     print("=" * 80)
 
     pipeline_result = run_detection_pipeline(
         input_files=input_files,
-        chunk_size=chunk_size,
-        workers=workers,
-        encoding=encoding,
-        enable_loitering_detection=enable_loitering_detection,
-        memory_output_file=memory_output_file,
+        run_config=run_config,
         detection_config=DEFAULT_DETECTION_CONFIG,
-        verbose=True,
     )
 
     global_summaries = pipeline_result.global_summaries
@@ -247,7 +246,7 @@ def main() -> None:
     else:
         print("No going dark events detected; skipping top vessel map output.")
 
-    if enable_loitering_detection:
+    if run_config.enable_loitering_detection:
         loitering_viz_data = get_top_loitering_vessel_visualization_data(global_summaries)
         if loitering_viz_data is not None:
             top_loitering_mmsi, loitering_viz_rows = loitering_viz_data

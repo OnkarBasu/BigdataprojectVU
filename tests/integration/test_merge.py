@@ -344,10 +344,10 @@ def test_merge_detects_d2_teleportation_and_updates_total_impossible_jump_km(
     monkeypatch,
 ) -> None:
     def fake_classify_d2_quality(
-        _previous,
-        _current,
-        _port_zones,
-        _teleportation_config,
+        previous,
+        current,
+        port_zones,
+        teleportation_config,
     ):
         return False, False, "ok", True
 

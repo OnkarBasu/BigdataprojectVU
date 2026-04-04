@@ -16,7 +16,7 @@ from src.anomaly_detection.rules import (
     _start_active_loitering_pair,
     _update_active_loitering_pair,
 )
-from config.detection_config import DEFAULT_DETECTION_CONFIG, DetectionConfig
+from src.config import DEFAULT_DETECTION_CONFIG, DetectionConfig
 from src.models import AISRecord, ChunkProcessingResult, VesselChunkSummary
 from src.models.events import LoiteringTransferEvent
 from src.models.processing import VesselGlobalSummary

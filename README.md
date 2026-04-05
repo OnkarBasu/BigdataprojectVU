@@ -14,7 +14,7 @@ The system identifies several types of anomalies:
   Long AIS gaps where the vessel likely continued moving.
 
 - **B — Loitering & Transfers**  
-  Two vessels staying close together at low speed for a prolonged time at sea.
+  Two vessels staying within 500 meters of each other, with speed < 1 knot, for more than 2 hours at sea.
 
 - **C — Draft Changes at Sea**  
   Significant draught changes during AIS blackout outside port areas.
@@ -24,6 +24,16 @@ The system identifies several types of anomalies:
   - **D2**: impossible relocation requiring unrealistic speed  
 
 Finally, each vessel is assigned a **DFSI (Dark Fleet Suspicion Index)** score.
+
+---
+
+## Key design decisions
+
+- streaming processing instead of full dataset loading
+- multiprocessing with heavy computation pushed to worker processes
+- incremental stateful merge instead of batch aggregation
+- separation of local (intra-chunk) and cross-chunk anomaly detection
+- in-memory processing without intermediate disk materialization
 
 ---
 
@@ -45,7 +55,7 @@ flowchart TD
         G[Group records by MMSI]
         H[Sort records per vessel]
 
-        I[Downsample records for A and C]
+        I[Downsample records for A, B, and C]
         J[Use full resolution records for D]
 
         K[Detect local anomaly A Going Dark]
@@ -54,27 +64,29 @@ flowchart TD
         M1[Classify D1 cloning]
         M2[Classify D2 relocation]
 
-        N[Build VesselChunkSummary]
+        N[Filter anomaly B candidate points\nlow SOG and sampled points]
+        O[Build VesselChunkSummary]
     end
 
     subgraph MP2[Main process merge and aggregation]
-        O[Collect chunk results from workers]
-        P[Buffer out of order results]
-        Q[Ordered merge by chunk ID]
-        R[Detect cross chunk anomalies]
-        R1[Boundary anomaly A and C on sampled records]
-        R2[Boundary anomaly D on full records]
-        S[Update VesselGlobalSummary]
+        P[Collect chunk results from workers]
+        Q[Buffer out of order results]
+        R[Ordered merge by chunk ID]
+
+        S[Incremental reduce and state update]
+        S1[Boundary anomaly A and C]
+        S2[Boundary anomaly D]
+        S3[Incremental anomaly B state\nbucket points, active pairs, finalized events]
+
+        T[Update VesselGlobalSummary]
     end
 
     subgraph FP[Final processing]
-        T{Loitering detection enabled}
-        U[Detect anomaly B on merged sampled records]
-        V[Attach anomaly B events]
-        W[Compute DFSI]
-        X[Rank vessels]
-        Y[Write dfsi_results.csv]
-        Z[Write visualization CSV files]
+        U[Finalize remaining anomaly B state]
+        V[Compute DFSI]
+        W[Rank vessels]
+        X[Write result CSV files]
+        Y[Write visualization CSV files]
     end
 
     subgraph PERF[Performance monitoring]
@@ -89,32 +101,38 @@ flowchart TD
     A --> B --> C --> D --> E
     E --> F --> G --> H
     H --> I
+    H --> J
+
     I --> K
     I --> L
-    H --> J --> M
+    I --> N
+
+    J --> M
     M --> M1
     M --> M2
-    K --> N
-    L --> N
-    M1 --> N
-    M2 --> N
 
-    N --> O --> P --> Q --> R
-    R --> R1
-    R --> R2
-    R1 --> S
-    R2 --> S
+    K --> O
+    L --> O
+    M1 --> O
+    M2 --> O
+    N --> O
 
-    S --> T
-    T -->|Yes| U --> V --> W
-    T -->|No| W
-    W --> X --> Y
-    X --> Z
+    O --> P --> Q --> R --> S
+    S --> S1
+    S --> S2
+    S --> S3
+    S1 --> T
+    S2 --> T
+    S3 --> T
+
+    T --> U --> V --> W
+    W --> X
+    W --> Y
 
     MP1 -.-> PM1
     WP -.-> PM2
     MP2 -.-> PM2
-    FP -.-> PM4
+    FP -.-> PM2
     PM1 --> PM2 --> PM3
     PM3 --> PM4
     PM3 --> PM5
@@ -132,11 +150,14 @@ flowchart TD
 ```
 
 - The main process performs CSV streaming, chunk creation, ordered merge, and final aggregation.
-- Worker processes handle per chunk parsing, validation, grouping, and local anomaly detection.
-- Cross chunk anomaly detection is performed during incremental merge in the main process.
+- Worker processes handle per-chunk parsing, validation, grouping, local anomaly detection, and anomaly B candidate-point preparation.
+- Cross-chunk anomaly detection is performed during incremental merge in the main process.
+- Anomaly B is maintained incrementally during ordered merge using time buckets and rolling vessel-pair state.
 - A lightweight memory profiler runs alongside the pipeline:
   - periodically samples RAM usage of the main and worker processes
   - produces aggregated and per-worker memory profiles for performance analysis
+
+---
 
 ### Pipeline explanation
 
@@ -154,112 +175,45 @@ The pipeline is designed as a **streaming + multiprocessing system**:
   - detecting **local (intra-chunk) anomalies**:
     - A (Going Dark) and C (Draft Change) on sampled records
     - D (Teleportation) on full-resolution records
+  - preparing sampled low-speed candidate points used later for anomaly B detection
 
 - The **main process incrementally merges results in strict chunk order**:
   - buffers out-of-order worker results
   - merges chunk summaries sequentially
   - detects **cross-chunk (boundary) anomalies**
-  - aggregates global vessel statistics
-
-- Optional step:
-  - anomaly B (Loitering & Transfers) is computed **after full merge**
-  - uses globally merged sampled records across all vessels
+  - updates global vessel statistics
+  - updates anomaly B state incrementally using:
+    - time buckets
+    - active vessel-pair state
+    - finalized loitering events
 
 - Final stage:
+  - remaining anomaly B state is finalized
   - DFSI (Dark Fleet Suspicion Index) is computed per vessel
-  - results and visualization datasets are exported
-
----
-
-## Performance profiling
-
-The system includes a built-in lightweight memory profiler designed for performance analysis and benchmarking.
-
-### Key features
-
-- Runs **in parallel with the pipeline** (non-intrusive)
-- Uses **periodic time-based sampling** (not chunk-based logging)
-- Tracks:
-  - main process RSS memory
-  - total worker processes memory
-  - per-worker memory usage (by PID)
-- Supports optional event-based samples at key pipeline stages
-
-### Output files
-
-- `memory_profile.csv`  
-  Aggregated memory usage over time:
-  - main RSS
-  - workers RSS
-  - total RSS
-  - pipeline progress (chunks, records)
-
-- `worker_memory_profile.csv`  
-  Detailed per-worker memory usage:
-  - RSS per process (PID)
-  - useful for load balancing and debugging
-
-- `memory_summary.csv`  
-  Final summary:
-  - peak memory (main / workers / total)
-  - peak single worker memory
-  - total runtime and sampling statistics
-
-### Design rationale
-
-The profiler is implemented as a **monitoring layer**, not as part of the data pipeline itself.
-
-- avoids distortion of pipeline logic
-- minimizes overhead using low-frequency sampling (~0.25–0.5 sec)
-- captures transient memory peaks more accurately than chunk-based logging
-
-This approach enables reliable performance analysis while keeping the system scalable.
+  - result and visualization CSV files are exported
 
 ---
 
 ## Performance benchmarking
 
-The pipeline is evaluated under different configurations to analyze scalability and performance trade-offs.
+The pipeline is evaluated under different configurations:
 
-### Benchmark parameters
-
-- number of workers (parallel processes)
+- number of workers
 - chunk size (streaming granularity)
 
 ### Metrics
 
 - total execution time
 - peak memory usage
-- throughput (records per second)
+- throughput
 
-### Speedup calculation
+### Speedup
 
-Speedup is computed relative to the single-worker baseline:  
-`S(n) = T(1) / T(n)`  
-where:  
-- `T(1)` — execution time with 1 worker
-- `T(n)` — execution time with n workers
+S(n) = T(1) / T(n)
 
-### Amdahl’s Law analysis
+### Amdahl’s Law
 
-The theoretical speedup is modeled using Amdahl’s Law:  
-`S(n) = 1 / ((1 - P) + P / n)`  
-where:  
-- `P` — parallelizable fraction of the pipeline
-
-The observed speedup is compared against the theoretical curve to identify bottlenecks.
-
-### Interpretation
-
-Differences between theoretical and actual speedup are explained by:
-
-- I/O constraints during CSV streaming
-- inter-process communication overhead
-- ordered merge in the main process (sequential bottleneck)
-- process scheduling and memory effects
-
-This analysis provides insight into the scalability limits of the system.
-
+S(n) = 1 / ((1 - P) + P / n)
 
 ---
 
@@ -273,20 +227,29 @@ This analysis provides insight into the scalability limits of the system.
 │   ├── sample/            # sample AIS datasets for testing
 │   └── ports_dma_region.csv
 ├── scripts/
-│   └── run_detection.py   # main CLI entry point
-├── slides/
-│   └── presentation.pdf
+│   ├── run_detection.py   # main detection entrypoint
+│   └── run_benchmarks.py  # performance benchmarking runner
 ├── src/
-│   ├── anomaly_detection/ # anomaly rules, merge logic, DFSI scoring
+│   ├── anomaly_detection/ # rules, merge logic, DFSI scoring
+│   ├── config/            # detection and runtime configuration
 │   ├── models/            # AIS records, events, processing summaries
-│   ├── parallel/          # worker pool logic
-│   ├── performance/       # memory profiling
-│   ├── streaming/         # CSV reading, raw row extraction, chunking
-│   ├── utils/             # geo and port utilities
-│   └── config.py
+│   ├── output/            # CSV export helpers
+│   ├── parallel/          # worker initialization and chunk processing
+│   ├── performance/       # memory monitoring and summaries
+│   ├── pipeline/          # end-to-end detection pipeline
+│   ├── streaming/         # CSV reading, extraction, chunking
+│   └── utils/             # geo and port utilities
+├── tests/
+│   ├── integration/
+│   └── unit/
 ├── visualization/         # plotting and map generation scripts
+|   ├── run_plots.py       # visualization entrypoint
+│   └── output/
+├── analysis/
+|   └── performance_benchmarking.ipynb
+├── README.md              # You are here :)
 ├── CONTRIBUTING.md
-├── README.md
+├── LICENSE
 └── requirements.txt
 ```
 
@@ -294,11 +257,44 @@ This analysis provides insight into the scalability limits of the system.
 
 ## Output files
 
-- dfsi_results.csv — final ranking of vessels  
-- memory_profile.csv — time-based aggregated RAM profile  
-- worker_memory_profile.csv — per-worker RAM usage over time  
-- memory_summary.csv — peak memory usage and profiling summary  
-- visualization datasets for anomalies A, B, D  
+The detection pipeline exports:
+
+- `dfsi_results.csv`  
+  Final per-vessel DFSI table with:
+  - `record_count`
+  - `max_gap_hours`
+  - `impossible_relocation_km_d2`
+  - `draft_change_count`
+  - anomaly counts for A, B, C, D
+  - `d1_episode_count`
+  - valid vs flagged D2 event counts
+
+- `memory_profile.csv`  
+  Aggregated memory profile over time.
+
+- `worker_memory_profile.csv`  
+  Per-worker RAM usage samples.
+
+- `memory_summary.csv`  
+  Final memory summary (peak and final RSS metrics).
+
+- Visualization CSV files:
+  - `top_going_dark_vessel_map.csv`
+  - `top_loitering_vessel_map.csv`
+  - `top_teleportation_d1_vessel_map.csv`
+  - `top_teleportation_d2_vessel_map.csv`
+
+---
+
+## Installation
+
+Create and activate a virtual environment, then install dependencies:
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
 
 ---
 
@@ -307,51 +303,76 @@ This analysis provides insight into the scalability limits of the system.
 ### Minimal example
 
 ```bash
-python -m scripts.run_detection data/sample/2025-09-01_head_100_000_rows.csv \
-    --chunk-size 100000 \
-    --workers 4
+python -m scripts.run_detection data/sample/2025-09-01_head_100_000_rows.csv```
 ```
 
-### Example with optional arguments
+### Example
+
 ```bash
 python -m scripts.run_detection \
+    data/sample/2025-08-31_tail_10_000_rows.csv \
     data/sample/2025-09-01_head_100_000_rows.csv \
-    --chunk-size 100000 \
+    --chunk-size 10000 \
     --workers 4 \
+    --encoding utf-8 \
     --top 10 \
     --output data/output/dfsi_results.csv \
     --memory-output data/output/memory_profile.csv \
     --teleportation-d1-viz-output data/output/top_teleportation_d1_vessel_map.csv \
     --teleportation-d2-viz-output data/output/top_teleportation_d2_vessel_map.csv \
     --going-dark-viz-output data/output/top_going_dark_vessel_map.csv \
-    --loitering-viz-output data/output/top_loitering_vessel_map.csv \
-    --enable-loitering-detection
+    --loitering-viz-output data/output/top_loitering_vessel_map.csv
 ```
 
-### Main arguments
+---
 
-| Main argument              | Desc |
-|----------------------------|------|
-| input_files                | one or more AIS CSV files |
-| chunk-size                 | number of raw rows per chunk |
-| workers                    | number of worker processes |
-| top                        | number of top vessels to display |
-| output                     | final DFSI results CSV |
-| memory-output              | memory profiling CSV |
-| enable-loitering-detection | enables anomaly B detection |
+## Main arguments
 
+| Argument | Description | Default |
+|---|---|---|
+| `input_files` | One or more AIS CSV files | required |
+| `--chunk-size` | Number of raw AIS rows per chunk | `100000` |
+| `--workers` | Number of worker processes | `4` |
+| `--encoding` | Input file encoding | `"utf-8"` |
+| `--top` | Number of top vessels to print by DFSI | `10` |
+| `--output` | Output path for final DFSI CSV | `data/output/dfsi_results.csv` |
+| `--memory-output` | Output path for aggregated memory profile | `data/output/memory_profile.csv` |
+| `--teleportation-d1-viz-output` | Output path for top D1 vessel visualization CSV | `data/output/top_teleportation_d1_vessel_map.csv` |
+| `--teleportation-d2-viz-output` | Output path for top D2 vessel visualization CSV | `data/output/top_teleportation_d2_vessel_map.csv` |
+| `--going-dark-viz-output` | Output path for top anomaly A vessel visualization CSV | `data/output/top_going_dark_vessel_map.csv` |
+| `--loitering-viz-output` | Output path for top anomaly B vessel visualization CSV | `data/output/top_loitering_vessel_map.csv` |
+| `--disable-loitering-detection` | Disable anomaly B detection (performance mode) | `False` (enabled by default) |
 
 ---
 
 ## DFSI formula
 
-```
 DFSI = (Max Gap Hours / 2)
-     + (D2 Distance in Nautical Miles / 10)
      + (Draft Changes * 15)
-```
+     + (D1 Episodes * 20)
+     + (Valid D2 Distance in nautical miles / 10)
+
+### D1 aggregation strategy
+
+D1 (near-simultaneous MMSI cloning) events are aggregated into temporal episodes
+using a 2-hour merge window.
+
+If consecutive D1 events occur within 2 hours of the current episode end,
+they are treated as one spoofing episode rather than several independent incidents.
+
+The DFSI uses the number of D1 episodes instead of the raw D1 event count.
+
+### D2 quality filtering
+
+D2 (impossible relocation) events are additionally checked with a coarse land mask.
+
+- If both points are at sea, the event is considered valid for DFSI.
+- If one or both points fall on land, the event is flagged as suspect.
+- Suspect events are still exported for analysis, but they do not contribute
+  to the DFSI distance component.
 
 ---
 
 ## Contributing
-Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for the branching strategy, pull request process, and repository workflow.
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the branching strategy, pull request process, and repository workflow.

@@ -4,7 +4,8 @@ import time
 from collections import defaultdict
 from typing import DefaultDict, Sequence
 
-from src.anomaly_detection import detect_all_pair_anomalies
+from src.anomaly_detection import detect_all_pair_anomalies, preload_land_geometry
+from src.config import DEFAULT_DETECTION_CONFIG, DetectionConfig
 from src.models import AISRecord, ChunkProcessingResult, VesselChunkSummary
 from src.streaming import Chunk
 from src.streaming.parser import AISRowParser
@@ -14,16 +15,21 @@ from src.utils.ports import PortZone
 
 PORT_ZONES: Sequence[PortZone] | None = None
 ROW_PARSER: AISRowParser | None = None
-ABC_SAMPLING_SECONDS = 5 * 60
+DETECTION_CONFIG: DetectionConfig = DEFAULT_DETECTION_CONFIG
 
 
-def worker_init() -> None:
+def worker_init(
+    detection_config: DetectionConfig = DEFAULT_DETECTION_CONFIG,
+) -> None:
     """Initialize per-process worker state."""
     global PORT_ZONES
     global ROW_PARSER
+    global DETECTION_CONFIG
 
     PORT_ZONES = load_port_zones()
     ROW_PARSER = AISRowParser()
+    DETECTION_CONFIG = detection_config
+    preload_land_geometry()
 
     import os
     print(f"Worker started: PID={os.getpid()}")
@@ -114,7 +120,10 @@ def _build_vessel_chunk_summary(
 
     first_record = records[0]
     last_record = records[-1]
-    sampled_records = _downsample_records(records, ABC_SAMPLING_SECONDS)
+    sampled_records = _downsample_records(
+        records,
+        DETECTION_CONFIG.sampling.abc_sampling_seconds,
+    )
 
     summary = VesselChunkSummary(
         mmsi=mmsi,
@@ -129,6 +138,7 @@ def _build_vessel_chunk_summary(
         going_dark_event, draft_change_event, _ = detect_all_pair_anomalies(
             previous=previous,
             current=current,
+            config=DETECTION_CONFIG,
             port_zones=PORT_ZONES,
         )
 
@@ -145,6 +155,7 @@ def _build_vessel_chunk_summary(
         _, _, teleportation_event = detect_all_pair_anomalies(
             previous=previous,
             current=current,
+            config=DETECTION_CONFIG,
             port_zones=PORT_ZONES,
         )
 
@@ -154,6 +165,7 @@ def _build_vessel_chunk_summary(
                 summary.teleportation_d1_events.append(teleportation_event)
             else:
                 summary.teleportation_d2_events.append(teleportation_event)
-                summary.total_impossible_jump_km += teleportation_event.distance_km
+                if teleportation_event.counts_for_dfsi:
+                    summary.total_impossible_jump_km += teleportation_event.distance_km
 
     return summary

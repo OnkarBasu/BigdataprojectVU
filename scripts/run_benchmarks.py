@@ -6,16 +6,21 @@ Executes tests sequentially to ensure accurate RSS measurements.
 """
 
 import subprocess
+import sys
 import time
 from pathlib import Path
 
+# Get workspace root (parent of scripts directory)
+SCRIPTS_DIR = Path(__file__).parent.resolve()
+WORKSPACE_ROOT = SCRIPTS_DIR.parent
+
 # Configuration
-WORKERS = [1, 2, 3, 4]
+WORKERS = [1,2,3,4,6,10,14]
 CHUNK_SIZES = [10000, 50000, 100000, 200000, 500000, 1000000]
 
-INPUT_FILE1 = Path("data/full/aisdk-2025-08-31.csv")
-INPUT_FILE2 = Path("data/full/aisdk-2025-09-01.csv")
-OUTPUT_BASE = Path("../data/output")
+INPUT_FILE1 = WORKSPACE_ROOT / "data/full/aisdk-2025-08-31.csv"
+INPUT_FILE2 = WORKSPACE_ROOT / "data/full/aisdk-2025-09-01.csv"
+OUTPUT_BASE = WORKSPACE_ROOT / "data/output"
 
 # Validate input files
 if not INPUT_FILE1.exists():
@@ -28,9 +33,11 @@ if not INPUT_FILE2.exists():
 print("=" * 80)
 print("PERFORMANCE BENCHMARKING SUITE")
 print("=" * 80)
+print(f"Workspace root: {WORKSPACE_ROOT}")
 print(f"Input files:")
 print(f"  - {INPUT_FILE1}")
 print(f"  - {INPUT_FILE2}")
+print(f"Output base: {OUTPUT_BASE}")
 print(f"Workers to test: {WORKERS}")
 print(f"Chunk sizes to test: {CHUNK_SIZES}")
 print("=" * 80)
@@ -59,7 +66,7 @@ for w in WORKERS:
         
         # Build command
         cmd = [
-            "python", "-m", "scripts.run_detection",
+            sys.executable, "-m", "scripts.run_detection",
             str(INPUT_FILE1),
             str(INPUT_FILE2),
             "--chunk-size", str(c),
@@ -67,18 +74,28 @@ for w in WORKERS:
             "--top", "10",
             "--memory-output", str(output_dir / "memory_profile.csv"),
             "--output", str(output_dir / "dfsi_results.csv"),
+            "--teleportation-d1-viz-output", str(output_dir / "top_teleportation_d1_vessel_map.csv"),
+            "--teleportation-d2-viz-output", str(output_dir / "top_teleportation_d2_vessel_map.csv"),
+            "--going-dark-viz-output", str(output_dir / "top_going_dark_vessel_map.csv"),
+            "--loitering-viz-output", str(output_dir / "top_loitering_vessel_map.csv"),
         ]
         
-        # Run detection
+        # Run detection from workspace root
         start = time.time()
         try:
-            result = subprocess.run(cmd, capture_output=False, timeout=7200)
+            result = subprocess.run(
+                cmd, 
+                timeout=7200,
+                cwd=str(WORKSPACE_ROOT)
+            )
             duration = time.time() - start
             
             # Check if output file was created
             if (output_dir / "memory_profile.csv").exists():
                 run_times[run_name] = duration
                 print(f"         ✓ SUCCESS in {duration:.1f}s")
+                csv_files = list(output_dir.glob("*.csv"))
+                print(f"         Generated {len(csv_files)} CSV files")
             else:
                 print(f"         ✗ FAILED: Output file not created")
                 failed_runs += 1

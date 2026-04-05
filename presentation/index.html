@@ -1,0 +1,3336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Shadow Fleet Detection</title>
+<style>
+/* ── Reset ─────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --red:#e74c3c;--red2:#c0392b;--redglow:rgba(231,76,60,.25);
+  --teal:#17becf;--orange:#ff7f0e;--green:#2ecc71;--yellow:#f1c40f;
+  --bg:#080d18;--bg2:#0d1526;--bg3:#121e35;
+  --glass:rgba(255,255,255,.04);--glassborder:rgba(255,255,255,.09);
+  --text:#dde4f0;--muted:#6b7f99;--white:#fff;
+  --font:'Segoe UI',system-ui,sans-serif;
+  --mono:'Consolas','Fira Code',monospace;
+}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hidden}
+
+/* ── Slides ────────────────────────────────────────────── */
+.deck{height:100vh;overflow-y:scroll;scroll-snap-type:y mandatory}
+.slide{height:100vh;scroll-snap-align:start;position:relative;overflow:hidden;display:flex;flex-direction:column}
+
+/* ── Dot nav ───────────────────────────────────────────── */
+.dots{position:fixed;right:20px;top:50%;transform:translateY(-50%);z-index:9999;display:flex;flex-direction:column;gap:10px}
+.dots a{width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,.2);display:block;transition:.25s;border:1px solid transparent}
+.dots a:hover,.dots a.on{background:var(--red);border-color:var(--red);box-shadow:0 0 8px var(--redglow);transform:scale(1.3)}
+
+/* ── Canvas bg ─────────────────────────────────────────── */
+.bg-canvas{position:absolute;inset:0;z-index:0}
+
+/* ── Glow blobs ────────────────────────────────────────── */
+.blob{position:absolute;border-radius:50%;filter:blur(90px);opacity:.18;pointer-events:none;z-index:0}
+
+/* ════════════════════════════════════════════════════════
+   SLIDE 1 — PIPELINE
+════════════════════════════════════════════════════════ */
+#s1{background:var(--bg)}
+#s1 .blob1{width:500px;height:500px;background:radial-gradient(circle,#c0392b,transparent);top:-100px;left:-100px}
+#s1 .blob2{width:400px;height:400px;background:radial-gradient(circle,#17becf,transparent);bottom:-80px;right:5%}
+
+/* hero */
+.s1-hero{position:relative;z-index:2;padding:28px 52px 0;flex-shrink:0}
+.s1-hero-top{display:flex;align-items:flex-end;justify-content:space-between}
+.s1-title{font-size:2.4rem;font-weight:900;letter-spacing:-.01em;line-height:1}
+.s1-title span{
+  background:linear-gradient(90deg,var(--red),#ff6b6b,var(--orange));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.s1-sub{font-size:.88rem;color:var(--muted);margin-top:5px;max-width:620px;line-height:1.5}
+.s1-hint{font-size:.75rem;color:var(--muted);background:var(--glass);border:1px solid var(--glassborder);
+  padding:5px 14px;border-radius:20px;letter-spacing:.04em;white-space:nowrap;margin-bottom:4px}
+.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(231,76,60,.4),transparent);margin:14px 0}
+
+/* pipeline track */
+.pipeline{position:relative;z-index:2;display:flex;align-items:flex-start;justify-content:center;
+  gap:0;padding:0 32px;flex:1;overflow:hidden}
+
+/* node */
+.pnode{display:flex;flex-direction:column;align-items:center;cursor:pointer;width:210px;flex-shrink:0;
+  animation:riseUp .5s ease both}
+.pnode:nth-child(1){animation-delay:.05s}
+.pnode:nth-child(3){animation-delay:.15s}
+.pnode:nth-child(5){animation-delay:.25s}
+.pnode:nth-child(7){animation-delay:.35s}
+.pnode:nth-child(9){animation-delay:.45s}
+@keyframes riseUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+
+.pcard{
+  width:100%;
+  background:var(--glass);
+  border:1px solid var(--glassborder);
+  border-radius:18px;
+  padding:22px 20px;
+  backdrop-filter:blur(12px);
+  transition:border-color .2s,box-shadow .2s,transform .2s;
+  position:relative;overflow:hidden}
+.pcard::after{content:'';position:absolute;inset:0;border-radius:18px;
+  background:linear-gradient(135deg,rgba(231,76,60,.06),transparent);
+  opacity:0;transition:opacity .2s}
+.pnode:hover .pcard,.pnode.lit .pcard{
+  border-color:var(--red);transform:translateY(-5px);
+  box-shadow:0 8px 32px var(--redglow),0 0 0 1px rgba(231,76,60,.15)}
+.pnode:hover .pcard::after,.pnode.lit .pcard::after{opacity:1}
+
+.pcard-top-bar{height:3px;border-radius:2px;margin-bottom:18px;
+  background:linear-gradient(90deg,var(--red),var(--orange))}
+
+.picon{font-size:2.2rem;text-align:center;margin-bottom:10px;
+  filter:drop-shadow(0 0 8px rgba(231,76,60,.5))}
+.pfile{font-family:var(--mono);font-size:.7rem;color:var(--teal);text-align:center;
+  background:rgba(23,190,207,.08);padding:4px 10px;border-radius:5px;margin-bottom:8px;
+  letter-spacing:.02em}
+.ptitle{font-size:.86rem;font-weight:700;color:var(--white);text-align:center;margin-bottom:14px;
+  letter-spacing:.01em}
+.pfacts{list-style:none;display:flex;flex-direction:column;gap:9px}
+.pfacts li{font-size:.7rem;color:var(--muted);padding-left:14px;position:relative;line-height:1.5}
+.pfacts li::before{content:'▸';color:var(--red);position:absolute;left:0;font-size:.62rem;top:2px}
+.pmore{margin-top:14px;font-size:.65rem;color:rgba(231,76,60,.55);text-align:center;
+  letter-spacing:.08em;text-transform:uppercase;padding-top:10px;
+  border-top:1px solid rgba(255,255,255,.05)}
+
+/* connector */
+.pconn{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  width:44px;flex-shrink:0;gap:6px;padding-top:60px}
+
+/* ── Ship animation ──────────────────────────────────── */
+.ship-lane{
+  position:relative;z-index:2;height:44px;margin:0 52px;
+  overflow:hidden;flex-shrink:0;
+  border-bottom:1px solid rgba(23,190,207,.12)}
+.wave-strip{
+  position:absolute;bottom:0;left:0;
+  width:400%;height:6px;
+  background:repeating-linear-gradient(
+    90deg,
+    transparent 0px,transparent 18px,
+    rgba(23,190,207,.07) 18px,rgba(23,190,207,.07) 36px);
+  animation:wavePan 5s linear infinite}
+@keyframes wavePan{from{transform:translateX(0)}to{transform:translateX(-25%)}}
+.ship-float{
+  position:absolute;bottom:8px;
+  display:flex;align-items:center;gap:10px;
+  animation:sailRight 18s linear infinite;
+  white-space:nowrap}
+@keyframes sailRight{
+  0%  {left:-260px;opacity:0}
+  4%  {opacity:1}
+  96% {opacity:1}
+  100%{left:110%;opacity:0}}
+.ship-svg{font-size:1.7rem;line-height:1;animation:bob .9s ease-in-out infinite alternate}
+@keyframes bob{from{transform:translateY(0)}to{transform:translateY(-3px)}}
+.ship-label{
+  font-size:.65rem;font-weight:800;letter-spacing:.22em;
+  color:var(--teal);text-transform:uppercase;
+  text-shadow:0 0 14px rgba(23,190,207,.6),0 0 4px rgba(23,190,207,.4);
+  animation:bob .9s ease-in-out infinite alternate}
+.ship-dots{display:flex;gap:3px;align-items:center}
+.ship-dots span{width:4px;height:4px;border-radius:50%;background:var(--teal);opacity:.4;
+  animation:blink 1.4s ease-in-out infinite}
+.ship-dots span:nth-child(2){animation-delay:.2s}
+.ship-dots span:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,100%{opacity:.15}50%{opacity:.7}}
+.ptrack{width:100%;height:2px;background:rgba(255,255,255,.07);border-radius:1px;
+  position:relative;overflow:hidden}
+.pdot{width:12px;height:12px;border-radius:50%;background:var(--red);position:absolute;
+  top:-5px;animation:flow 2s linear infinite;box-shadow:0 0 10px var(--red),0 0 4px var(--red)}
+.pconn:nth-child(2) .pdot{animation-delay:0s}
+.pconn:nth-child(4) .pdot{animation-delay:.5s}
+.pconn:nth-child(6) .pdot{animation-delay:1s}
+.pconn:nth-child(8) .pdot{animation-delay:1.5s}
+@keyframes flow{0%{left:-12px;opacity:0}10%{opacity:1}90%{opacity:1}100%{left:100%;opacity:0}}
+.pconn-label{font-size:.6rem;color:var(--muted);text-align:center;line-height:1.3;white-space:nowrap}
+
+/* stats bar */
+.stats-bar{position:relative;z-index:2;display:flex;justify-content:center;gap:0;
+  margin:0 52px;border-top:1px solid var(--glassborder);padding:10px 0;flex-shrink:0}
+.stat{flex:1;text-align:center;padding:0 16px;border-right:1px solid var(--glassborder)}
+.stat:last-child{border-right:none}
+.stat-val{font-size:1.2rem;font-weight:800;color:var(--white);
+  background:linear-gradient(90deg,var(--red),var(--orange));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.stat-key{font-size:.65rem;color:var(--muted);margin-top:1px;letter-spacing:.04em;text-transform:uppercase}
+
+/* detail overlay */
+.detail-overlay{
+  position:fixed;inset:0;z-index:800;display:none;
+  background:rgba(8,13,24,.75);backdrop-filter:blur(4px);
+  align-items:center;justify-content:center}
+.detail-overlay.show{display:flex}
+.detail-modal{
+  background:var(--bg2);border:1px solid var(--glassborder);
+  border-top:3px solid var(--red);border-radius:18px;
+  padding:32px 36px;max-width:600px;width:92%;
+  box-shadow:0 24px 80px rgba(0,0,0,.6);
+  animation:popIn .25s ease}
+@keyframes popIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
+.dm-close{float:right;background:none;border:1px solid var(--glassborder);
+  color:var(--muted);cursor:pointer;padding:3px 12px;border-radius:6px;
+  font-size:.8rem;transition:.2s;margin-top:-4px}
+.dm-close:hover{color:var(--red);border-color:var(--red)}
+.dm-file{font-family:var(--mono);color:var(--teal);font-size:.8rem;margin-bottom:6px}
+.dm-title{font-size:1.3rem;font-weight:800;color:var(--white);margin-bottom:16px}
+.dm-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.dm-item{background:var(--glass);border:1px solid var(--glassborder);border-radius:8px;
+  padding:10px 12px;font-size:.78rem;color:var(--text);line-height:1.4;position:relative;
+  padding-left:22px}
+.dm-item::before{content:'▸';color:var(--red);position:absolute;left:8px;top:11px;font-size:.65rem}
+
+/* ════════════════════════════════════════════════════════
+   SLIDE 2 — ANOMALY DETECTION
+════════════════════════════════════════════════════════ */
+#s2{background:var(--bg)}
+#s2 .blob1{width:600px;height:600px;background:radial-gradient(circle,#1a0a30,transparent);top:-150px;right:-100px}
+#s2 .blob2{width:400px;height:400px;background:radial-gradient(circle,#0d2a1a,transparent);bottom:-100px;left:5%}
+
+.s2-inner{position:relative;z-index:2;display:flex;flex-direction:column;height:100%;padding:22px 40px 16px}
+
+.s2-hero{flex-shrink:0;margin-bottom:16px}
+.s2-title{font-size:2.2rem;font-weight:900;letter-spacing:-.01em}
+.s2-title span{background:linear-gradient(90deg,var(--red),#ff6b6b);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.s2-sub{font-size:.85rem;color:var(--muted);margin-top:4px}
+
+.s2-body{display:flex;gap:20px;flex:1;overflow:hidden}
+
+/* anomaly cards grid */
+.anomaly-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;
+  gap:12px;flex:1.15;overflow:hidden}
+
+.acard{
+  background:var(--glass);
+  border:1px solid var(--glassborder);
+  border-radius:14px;
+  padding:16px 18px;
+  cursor:pointer;
+  display:flex;flex-direction:column;
+  transition:transform .2s,box-shadow .2s,border-color .2s;
+  position:relative;overflow:hidden;
+  backdrop-filter:blur(10px)}
+.acard::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.acard.ca::before{background:linear-gradient(90deg,#e74c3c,#ff6b6b)}
+.acard.cb::before{background:linear-gradient(90deg,#f39c12,#f1c40f)}
+.acard.cc::before{background:linear-gradient(90deg,#17becf,#1abc9c)}
+.acard.cd::before{background:linear-gradient(90deg,#9b59b6,#6c3483)}
+
+.acard:hover{transform:translateY(-3px)}
+.acard.ca:hover{box-shadow:0 8px 28px rgba(231,76,60,.2);border-color:#e74c3c}
+.acard.cb:hover{box-shadow:0 8px 28px rgba(243,156,18,.2);border-color:#f39c12}
+.acard.cc:hover{box-shadow:0 8px 28px rgba(23,190,207,.2);border-color:#17becf}
+.acard.cd:hover{box-shadow:0 8px 28px rgba(155,89,182,.2);border-color:#9b59b6}
+
+.acard-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.acard-icon{font-size:1.6rem;width:42px;height:42px;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.ca .acard-icon{background:rgba(231,76,60,.12)}
+.cb .acard-icon{background:rgba(243,156,18,.12)}
+.cc .acard-icon{background:rgba(23,190,207,.12)}
+.cd .acard-icon{background:rgba(155,89,182,.12)}
+
+.acard-label{display:flex;flex-direction:column;gap:2px}
+.acard-badge{font-size:.6rem;font-weight:800;letter-spacing:.1em;padding:2px 7px;
+  border-radius:4px;display:inline-block;width:fit-content}
+.ca .acard-badge{background:rgba(231,76,60,.15);color:#e74c3c}
+.cb .acard-badge{background:rgba(243,156,18,.15);color:#f39c12}
+.cc .acard-badge{background:rgba(23,190,207,.15);color:#17becf}
+.cd .acard-badge{background:rgba(155,89,182,.15);color:#9b59b6}
+.acard-name{font-size:.92rem;font-weight:700;color:var(--white)}
+
+.acard-desc{font-size:.74rem;color:var(--muted);line-height:1.4;margin-bottom:10px;flex-shrink:0}
+
+.acard-thresholds{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
+.thresh{font-size:.64rem;padding:3px 8px;border-radius:5px;font-family:var(--mono);font-weight:600}
+.ca .thresh{background:rgba(231,76,60,.1);color:#e74c3c;border:1px solid rgba(231,76,60,.2)}
+.cb .thresh{background:rgba(243,156,18,.1);color:#f39c12;border:1px solid rgba(243,156,18,.2)}
+.cc .thresh{background:rgba(23,190,207,.1);color:#17becf;border:1px solid rgba(23,190,207,.2)}
+.cd .thresh{background:rgba(155,89,182,.1);color:#9b59b6;border:1px solid rgba(155,89,182,.2)}
+
+.acard-facts{list-style:none;display:flex;flex-direction:column;gap:4px;flex:1;overflow:hidden}
+.acard-facts li{font-size:.7rem;color:var(--text);padding-left:13px;
+  position:relative;line-height:1.35;opacity:.85}
+.acard-facts li::before{content:'▸';position:absolute;left:0;font-size:.6rem;top:1px}
+.ca .acard-facts li::before{color:#e74c3c}
+.cb .acard-facts li::before{color:#f39c12}
+.cc .acard-facts li::before{color:#17becf}
+.cd .acard-facts li::before{color:#9b59b6}
+
+/* DFSI panel */
+.dfsi-panel{
+  flex:0.7;background:var(--glass);border:1px solid var(--glassborder);
+  border-radius:16px;backdrop-filter:blur(12px);
+  padding:22px 20px;display:flex;flex-direction:column;
+  border-top:3px solid var(--red)}
+
+.dfsi-panel h3{font-size:.7rem;color:var(--muted);letter-spacing:.1em;
+  text-transform:uppercase;margin-bottom:4px}
+.dfsi-panel h2{font-size:1.15rem;font-weight:800;color:var(--white);margin-bottom:4px}
+.dfsi-tagline{font-size:.72rem;color:var(--muted);line-height:1.4;margin-bottom:16px;
+  padding-bottom:14px;border-bottom:1px solid var(--glassborder)}
+
+.dfsi-formula-display{font-family:var(--mono);font-size:.8rem;color:var(--muted);
+  margin-bottom:20px;line-height:1.8}
+.dfsi-formula-display .fh{color:var(--white);font-size:.95rem;font-weight:700}
+.dfsi-formula-display .fc{color:var(--red)}
+
+/* score bars */
+.score-bars{display:flex;flex-direction:column;gap:12px;flex:1}
+.sbar{display:flex;flex-direction:column;gap:5px}
+.sbar-head{display:flex;justify-content:space-between;align-items:center}
+.sbar-name{font-size:.72rem;font-weight:600;color:var(--white)}
+.sbar-formula{font-family:var(--mono);font-size:.65rem}
+.sbar-track{height:7px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden}
+.sbar-fill{height:100%;border-radius:4px;transform-origin:left;
+  animation:barIn 1.2s cubic-bezier(.22,1,.36,1) both}
+@keyframes barIn{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.sbar:nth-child(1) .sbar-fill{background:linear-gradient(90deg,#e74c3c,#ff6b6b);width:55%;animation-delay:.3s}
+.sbar:nth-child(2) .sbar-fill{background:linear-gradient(90deg,#2ecc71,#1abc9c);width:78%;animation-delay:.5s}
+.sbar:nth-child(3) .sbar-fill{background:linear-gradient(90deg,#17becf,#3498db);width:100%;animation-delay:.7s}
+.sbar-sub{font-size:.64rem;color:var(--muted);line-height:1.3}
+
+.dfsi-note{margin-top:auto;padding-top:14px;border-top:1px solid var(--glassborder);
+  font-size:.68rem;color:var(--muted);line-height:1.5}
+.dfsi-note strong{color:var(--text)}
+
+/* ════════════════════════════════════════════════════════
+   SLIDES 3-5 — MAPS
+════════════════════════════════════════════════════════ */
+.map-slide{background:var(--bg)}
+.map-bar{
+  height:62px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 28px;background:var(--bg2);
+  border-bottom:2px solid rgba(231,76,60,.4);flex-shrink:0;position:relative;z-index:5}
+.map-bar-l h2{font-size:1.05rem;font-weight:700;color:var(--white)}
+.map-bar-l p{font-size:.73rem;color:var(--muted);margin-top:1px}
+.mbadge{font-size:.67rem;padding:3px 11px;border-radius:14px;font-weight:700;
+  letter-spacing:.04em;border:1px solid transparent}
+.mbadge-r{background:rgba(231,76,60,.12);color:#e74c3c;border-color:rgba(231,76,60,.25)}
+.mbadge-b{background:rgba(31,119,180,.12);color:#1f77b4;border-color:rgba(31,119,180,.25)}
+.mbadge-p{background:rgba(148,103,189,.12);color:#9467bd;border-color:rgba(148,103,189,.25)}
+.map-iframe-wrap{flex:1;position:relative}
+.map-iframe-wrap iframe{width:100%;height:100%;border:none;display:block}
+
+/* scrollbar */
+::-webkit-scrollbar{width:5px;background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--bg3);border-radius:3px}
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots">
+  <a href="#s1" title="Pipeline"></a>
+  <a href="#s2" title="Anomalies"></a>
+  <a href="#s3" title="Going Dark"></a>
+  <a href="#s4" title="D1 Map"></a>
+  <a href="#s5" title="D2 Map"></a>
+</nav>
+
+<div class="deck" id="deck">
+
+<!-- ════════════════════════════════════════════════════
+     SLIDE 1 — THE BIG DATA PIPELINE
+════════════════════════════════════════════════════ -->
+<section class="slide" id="s1">
+  <canvas class="bg-canvas" id="c1"></canvas>
+  <div class="blob blob1"></div>
+  <div class="blob blob2"></div>
+
+  <div class="s1-hero">
+    <div class="s1-hero-top">
+      <div>
+        <div class="s1-title">The <span>Big Data</span> Pipeline</div>
+        <div class="s1-sub">Multi-gigabyte AIS CSV files streamed row-by-row via Python generators, cleaned, chunked, and processed in parallel across CPU workers — without ever loading the full file into memory</div>
+      </div>
+      <div class="s1-hint">Click any component for details</div>
+    </div>
+    <div class="divider"></div>
+  </div>
+
+  <div class="pipeline" id="pipeline">
+
+    <!-- reader.py -->
+    <div class="pnode" data-key="reader">
+      <div class="pcard">
+        <div class="pcard-top-bar"></div>
+        <div class="picon">📡</div>
+        <div class="pfile">reader.py</div>
+        <div class="ptitle">Streaming Layer</div>
+        <ul class="pfacts">
+          <li>Reads header once → O(1) column lookup</li>
+          <li>Yields 7 fields from ~50 columns per row</li>
+          <li>Chains 2 CSV files into one continuous stream</li>
+          <li>Assigns global chunk_id for ordered merging</li>
+          <li>10 GB file uses same RAM as one chunk</li>
+        </ul>
+        <div class="pmore">click to explore</div>
+      </div>
+    </div>
+
+    <div class="pconn">
+      <div class="ptrack"><div class="pdot"></div></div>
+      <div class="pconn-label">raw rows<br>streaming</div>
+    </div>
+
+    <!-- parser.py -->
+    <div class="pnode" data-key="parser">
+      <div class="pcard">
+        <div class="pcard-top-bar"></div>
+        <div class="picon">🧹</div>
+        <div class="pfile">parser.py</div>
+        <div class="ptitle">Cleaning Layer</div>
+        <ul class="pfacts">
+          <li>Runs inside each worker process</li>
+          <li>Class A vessels only — drops buoys, aircraft</li>
+          <li>Validates MMSI: 9-digit, no placeholders</li>
+          <li>Lat/lon range check, rejects (0,0) coords</li>
+          <li>Cheapest filter runs first → fail fast</li>
+        </ul>
+        <div class="pmore">click to explore</div>
+      </div>
+    </div>
+
+    <div class="pconn">
+      <div class="ptrack"><div class="pdot"></div></div>
+      <div class="pconn-label">clean chunks<br>dispatched</div>
+    </div>
+
+    <!-- worker_pool.py -->
+    <div class="pnode" data-key="worker">
+      <div class="pcard">
+        <div class="pcard-top-bar"></div>
+        <div class="picon">⚙️</div>
+        <div class="pfile">worker_pool.py</div>
+        <div class="ptitle">Parallel Workers</div>
+        <ul class="pfacts">
+          <li>Pool.imap_unordered — N cores in parallel</li>
+          <li>Workers init once: PORT_ZONES + ROW_PARSER</li>
+          <li>Groups by MMSI, sorts by timestamp</li>
+          <li>Downsamples to 5-min for anomalies A & C</li>
+          <li>Detects A, B, C, D1, D2 per chunk</li>
+        </ul>
+        <div class="pmore">click to explore</div>
+      </div>
+    </div>
+
+    <div class="pconn">
+      <div class="ptrack"><div class="pdot"></div></div>
+      <div class="pconn-label">chunk results<br>out-of-order</div>
+    </div>
+
+    <!-- merge.py -->
+    <div class="pnode" data-key="merge">
+      <div class="pcard">
+        <div class="pcard-top-bar"></div>
+        <div class="picon">🔗</div>
+        <div class="pfile">merge.py</div>
+        <div class="ptitle">Merge Layer</div>
+        <ul class="pfacts">
+          <li>Buffers results, reassembles by chunk_id</li>
+          <li>Compares boundary: last of chunk N vs first of N+1</li>
+          <li>Catches anomalies spanning chunk boundaries</li>
+          <li>A & C use sampled records; D uses full-res</li>
+          <li>D1 and D2 tracked separately</li>
+        </ul>
+        <div class="pmore">click to explore</div>
+      </div>
+    </div>
+
+    <div class="pconn">
+      <div class="ptrack"><div class="pdot"></div></div>
+      <div class="pconn-label">global events<br>all vessels</div>
+    </div>
+
+    <!-- run_detection.py -->
+    <div class="pnode" data-key="scoring">
+      <div class="pcard">
+        <div class="pcard-top-bar"></div>
+        <div class="picon">🏆</div>
+        <div class="pfile">run_detection.py</div>
+        <div class="ptitle">Scoring & Output</div>
+        <ul class="pfacts">
+          <li>Aggregates all events per vessel</li>
+          <li>Computes DFSI score for every MMSI</li>
+          <li>Ranks vessels by suspicion descending</li>
+          <li>Writes dfsi_results.csv + map CSVs</li>
+          <li>MemoryMonitor logs RAM throughout</li>
+        </ul>
+        <div class="pmore">click to explore</div>
+      </div>
+    </div>
+
+  </div><!-- /pipeline -->
+
+  <!-- floating ship -->
+  <div class="ship-lane">
+    <div class="wave-strip"></div>
+    <div class="ship-float">
+      <div class="ship-dots"><span></span><span></span><span></span></div>
+      <div class="ship-svg">&#x1F6A2;</div>
+      <div class="ship-label">Big&nbsp;Data</div>
+      <div class="ship-dots"><span></span><span></span><span></span></div>
+    </div>
+  </div>
+
+  <div class="stats-bar">
+    <div class="stat"><div class="stat-val">2</div><div class="stat-key">CSV input files</div></div>
+    <div class="stat"><div class="stat-val">7 / ~50</div><div class="stat-key">columns kept per row</div></div>
+    <div class="stat"><div class="stat-val">5-min</div><div class="stat-key">downsample interval A&C</div></div>
+    <div class="stat"><div class="stat-val">60 kn</div><div class="stat-key">teleportation threshold</div></div>
+    <div class="stat"><div class="stat-val">4h / 1km</div><div class="stat-key">going dark threshold</div></div>
+    <div class="stat"><div class="stat-val">DFSI</div><div class="stat-key">final vessel ranking</div></div>
+  </div>
+
+</section>
+
+<!-- detail overlay -->
+<div class="detail-overlay" id="detailOverlay">
+  <div class="detail-modal">
+    <button class="dm-close" onclick="closeDetail()">close ✕</button>
+    <div class="dm-file" id="dmFile"></div>
+    <div class="dm-title" id="dmTitle"></div>
+    <div class="dm-grid" id="dmGrid"></div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════
+     SLIDE 2 — ANOMALY DETECTION
+════════════════════════════════════════════════════ -->
+<section class="slide" id="s2">
+  <canvas class="bg-canvas" id="c2"></canvas>
+  <div class="blob blob1"></div>
+  <div class="blob blob2"></div>
+
+  <div class="s2-inner">
+    <div class="s2-hero">
+      <div class="s2-title"><span>Anomaly</span> Detection Engine</div>
+      <div class="s2-sub">Four suspicious behaviours detected in <code style="color:var(--teal);font-family:var(--mono)">rules.py</code> — every consecutive AIS ping pair checked against all rules simultaneously</div>
+    </div>
+
+    <div class="s2-body">
+
+      <!-- 2x2 anomaly cards -->
+      <div class="anomaly-grid">
+
+        <!-- A -->
+        <div class="acard ca">
+          <div class="acard-head">
+            <div class="acard-icon">🌑</div>
+            <div class="acard-label">
+              <div class="acard-badge">ANOMALY A</div>
+              <div class="acard-name">Going Dark</div>
+            </div>
+          </div>
+          <div class="acard-desc">Vessel disables AIS transponder while continuing to move — conceals route, port calls, and cargo activity from authorities and tracking systems.</div>
+          <div class="acard-thresholds">
+            <span class="thresh">gap &gt; 4 hours</span>
+            <span class="thresh">distance &gt; 1 km</span>
+            <span class="thresh">haversine dist</span>
+          </div>
+          <ul class="acard-facts">
+            <li>Detected by <code style="font-family:var(--mono);font-size:.65rem">detect_going_dark()</code> in rules.py</li>
+            <li>Stationary vessels excluded — movement required</li>
+            <li>Runs on 5-min downsampled records</li>
+            <li>DFSI contribution: <code style="font-family:var(--mono);font-size:.65rem">max_gap_hours / 2</code></li>
+          </ul>
+        </div>
+
+        <!-- B -->
+        <div class="acard cb">
+          <div class="acard-head">
+            <div class="acard-icon">🤝</div>
+            <div class="acard-label">
+              <div class="acard-badge">ANOMALY B</div>
+              <div class="acard-name">Loitering &amp; Transfer</div>
+            </div>
+          </div>
+          <div class="acard-desc">Two vessels linger together at sea at very low speed — indicates covert ship-to-ship transfer of cargo, fuel, or sanctioned goods outside port oversight.</div>
+          <div class="acard-thresholds">
+            <span class="thresh">proximity &lt; 0.5 km</span>
+            <span class="thresh">SOG &lt; 1 kn</span>
+            <span class="thresh">duration &ge; 2h</span>
+          </div>
+          <ul class="acard-facts">
+            <li>Detected via <code style="font-family:var(--mono);font-size:.65rem">detect_loitering_transfers()</code></li>
+            <li>Spatial grid bucketing for fast proximity search</li>
+            <li>Outside port zones only — port visits excluded</li>
+            <li>Runs post-merge on globally merged sampled records</li>
+          </ul>
+        </div>
+
+        <!-- C -->
+        <div class="acard cc">
+          <div class="acard-head">
+            <div class="acard-icon">⚓</div>
+            <div class="acard-label">
+              <div class="acard-badge">ANOMALY C</div>
+              <div class="acard-name">Draft Change</div>
+            </div>
+          </div>
+          <div class="acard-desc">Ship draught changes significantly during an AIS blackout while at sea — strongly suggests covert loading or unloading of cargo away from port inspection.</div>
+          <div class="acard-thresholds">
+            <span class="thresh">gap &gt; 2 hours</span>
+            <span class="thresh">draught &Delta; &gt; 5%</span>
+            <span class="thresh">at sea only</span>
+          </div>
+          <ul class="acard-facts">
+            <li>Detected via <code style="font-family:var(--mono);font-size:.65rem">detect_draft_change()</code></li>
+            <li>Vessel must be outside all port zone polygons</li>
+            <li>Hardest anomaly to explain innocently</li>
+            <li>DFSI contribution: <code style="font-family:var(--mono);font-size:.65rem">count &times; 15</code> — highest weight</li>
+          </ul>
+        </div>
+
+        <!-- D -->
+        <div class="acard cd">
+          <div class="acard-head">
+            <div class="acard-icon">👥</div>
+            <div class="acard-label">
+              <div class="acard-badge">ANOMALY D</div>
+              <div class="acard-name">Teleportation / Cloning</div>
+            </div>
+          </div>
+          <div class="acard-desc">Same MMSI broadcasts from two physically impossible locations — reveals identity cloning where a shadow vessel spoofs a legitimate ship's AIS identity.</div>
+          <div class="acard-thresholds">
+            <span class="thresh">speed &gt; 60 kn</span>
+            <span class="thresh">D1: gap &le; 30 min</span>
+            <span class="thresh">D2: 30 min–24h</span>
+          </div>
+          <ul class="acard-facts">
+            <li><strong>D1</strong> — near-simultaneous: two ships, one MMSI at same time</li>
+            <li><strong>D2</strong> — impossible relocation after a longer AIS gap</li>
+            <li>Rejects (0,0) coordinates and gaps &lt; 30 seconds</li>
+            <li>D2 DFSI: <code style="font-family:var(--mono);font-size:.65rem">total_D2_jump_nm / 10</code></li>
+          </ul>
+        </div>
+
+      </div><!-- /anomaly-grid -->
+
+      <!-- DFSI panel -->
+      <div class="dfsi-panel">
+        <h3>Suspicion Scoring</h3>
+        <h2>Dark Fleet Suspicion Index</h2>
+        <div class="dfsi-tagline">Every vessel receives a DFSI score aggregating evidence from all detected anomalies. Higher score = more suspicious. Output ranked in <code style="font-family:var(--mono);font-size:.68rem;color:var(--teal)">dfsi_results.csv</code></div>
+
+        <div class="dfsi-formula-display">
+          <div class="fh">DFSI =</div>
+          <div>&nbsp;&nbsp;<span class="fc">max_gap_h</span> / 2</div>
+          <div>&nbsp;&nbsp;+ <span class="fc">D2_jump_nm</span> / 10</div>
+          <div>&nbsp;&nbsp;+ <span class="fc">draft_count</span> &times; 15</div>
+        </div>
+
+        <div class="score-bars">
+          <div class="sbar">
+            <div class="sbar-head">
+              <div class="sbar-name">Anomaly A — Going Dark</div>
+              <div class="sbar-formula" style="color:#e74c3c">max_gap_h / 2</div>
+            </div>
+            <div class="sbar-track"><div class="sbar-fill"></div></div>
+            <div class="sbar-sub">Proportional to worst single blackout duration. A 10h blackout scores 5 points.</div>
+          </div>
+          <div class="sbar">
+            <div class="sbar-head">
+              <div class="sbar-name">Anomaly D2 — Teleportation</div>
+              <div class="sbar-formula" style="color:#2ecc71">D2_jump_nm / 10</div>
+            </div>
+            <div class="sbar-track"><div class="sbar-fill"></div></div>
+            <div class="sbar-sub">Cumulative impossible jump distance. Only D2 counts — D1 is identity cloning not relocation.</div>
+          </div>
+          <div class="sbar">
+            <div class="sbar-head">
+              <div class="sbar-name">Anomaly C — Draft Change</div>
+              <div class="sbar-formula" style="color:#17becf">count &times; 15</div>
+            </div>
+            <div class="sbar-track"><div class="sbar-fill"></div></div>
+            <div class="sbar-sub">Highest weight — each covert cargo op scores 15 points. Very hard to explain innocently.</div>
+          </div>
+        </div>
+
+        <div class="dfsi-note">
+          <strong>Output files:</strong> dfsi_results.csv (all vessels ranked) &middot; top_going_dark_vessel_map.csv &middot; top_teleportation_d1/d2_vessel_map.csv &middot; memory_profile.csv
+        </div>
+      </div><!-- /dfsi-panel -->
+
+    </div><!-- /s2-body -->
+  </div><!-- /s2-inner -->
+</section>
+
+
+<!-- ════════════════════════════════════════════════════
+     SLIDE 3 — GOING DARK MAP
+════════════════════════════════════════════════════ -->
+<section class="slide map-slide" id="s3">
+  <div class="map-bar">
+    <div class="map-bar-l">
+      <h2>🌑 Anomaly A — Going Dark</h2>
+      <p>Blue = last known position &nbsp;·&nbsp; Red = reappearance &nbsp;·&nbsp; Orange line = AIS blackout gap</p>
+    </div>
+    <div style="display:flex;gap:8px">
+      <span class="mbadge mbadge-r">Gap &gt; 4h</span>
+      <span class="mbadge mbadge-r">Distance &gt; 1km</span>
+    </div>
+  </div>
+  <div class="map-iframe-wrap">
+    <iframe srcdoc="&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;head&gt;
+    
+    &lt;meta http-equiv=&quot;content-type&quot; content=&quot;text/html; charset=UTF-8&quot; /&gt;
+    &lt;script src=&quot;https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js&quot;&gt;&lt;/script&gt;
+    &lt;script src=&quot;https://code.jquery.com/jquery-3.7.1.min.js&quot;&gt;&lt;/script&gt;
+    &lt;script src=&quot;https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js&quot;&gt;&lt;/script&gt;
+    &lt;script src=&quot;https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js&quot;&gt;&lt;/script&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css&quot;/&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css&quot;/&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css&quot;/&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css&quot;/&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css&quot;/&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css&quot;/&gt;
+    
+            &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width,
+                initial-scale=1.0, maximum-scale=1.0, user-scalable=no&quot; /&gt;
+            &lt;style&gt;
+                #map_afa783cb581efc01676f48c3f221a574 {
+                    position: relative;
+                    width: 100.0%;
+                    height: 100.0%;
+                    left: 0.0%;
+                    top: 0.0%;
+                }
+                .leaflet-container { font-size: 1rem; }
+            &lt;/style&gt;
+
+            &lt;style&gt;html, body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            &lt;/style&gt;
+
+            &lt;style&gt;#map {
+                position:absolute;
+                top:0;
+                bottom:0;
+                right:0;
+                left:0;
+                }
+            &lt;/style&gt;
+
+            &lt;script&gt;
+                L_NO_TOUCH = false;
+                L_DISABLE_3D = false;
+            &lt;/script&gt;
+
+        
+&lt;/head&gt;
+&lt;body&gt;
+    
+    
+    &lt;div style=&quot;
+        position: fixed;
+        bottom: 30px;
+        left: 30px;
+        z-index: 1000;
+        background: white;
+        padding: 8px 12px;
+        border: 1px solid #999;
+        border-radius: 4px;
+        font: 13px Arial, sans-serif;
+        line-height: 1.6;
+        box-shadow: 1px 1px 4px rgba(0,0,0,0.2);
+    &quot;&gt;
+        &lt;b&gt;A — Going Dark&lt;/b&gt;&lt;br&gt;
+        &lt;span style=&quot;color:#1f77b4;&quot;&gt;&amp;#9679;&lt;/span&gt; Last known position&lt;br&gt;
+        &lt;span style=&quot;color:#d62728;&quot;&gt;&amp;#9679;&lt;/span&gt; Reappearance&lt;br&gt;
+        &lt;span style=&quot;color:#ff7f0e;&quot;&gt;&amp;#9644;&lt;/span&gt; Blackout path
+    &lt;/div&gt;
+    
+    
+            &lt;div class=&quot;folium-map&quot; id=&quot;map_afa783cb581efc01676f48c3f221a574&quot; &gt;&lt;/div&gt;
+        
+&lt;/body&gt;
+&lt;script&gt;
+    
+    
+            var map_afa783cb581efc01676f48c3f221a574 = L.map(
+                &quot;map_afa783cb581efc01676f48c3f221a574&quot;,
+                {
+                    center: [55.794004, 5.9762059999999995],
+                    crs: L.CRS.EPSG3857,
+                    ...{
+  &quot;zoom&quot;: 6,
+  &quot;zoomControl&quot;: true,
+  &quot;preferCanvas&quot;: false,
+}
+
+                }
+            );
+            L.control.scale().addTo(map_afa783cb581efc01676f48c3f221a574);
+
+            
+
+        
+    
+            var tile_layer_8d9faf55d9273be4adcae00fdc774fc8 = L.tileLayer(
+                &quot;https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png&quot;,
+                {
+  &quot;minZoom&quot;: 0,
+  &quot;maxZoom&quot;: 20,
+  &quot;maxNativeZoom&quot;: 20,
+  &quot;noWrap&quot;: false,
+  &quot;attribution&quot;: &quot;\u0026copy; \u003ca href=\&quot;https://www.openstreetmap.org/copyright\&quot;\u003eOpenStreetMap\u003c/a\u003e contributors \u0026copy; \u003ca href=\&quot;https://carto.com/attributions\&quot;\u003eCARTO\u003c/a\u003e&quot;,
+  &quot;subdomains&quot;: &quot;abcd&quot;,
+  &quot;detectRetina&quot;: false,
+  &quot;tms&quot;: false,
+  &quot;opacity&quot;: 1,
+}
+
+            );
+        
+    
+            tile_layer_8d9faf55d9273be4adcae00fdc774fc8.addTo(map_afa783cb581efc01676f48c3f221a574);
+        
+    
+            var feature_group_be5c40c3459bd58ddf2f7d490d4f4e4e = L.featureGroup(
+                {
+}
+            );
+        
+    
+            var poly_line_1001f3f7c94a225f32aac661c7f6a2d9 = L.polyline(
+                [[55.803708, 6.025302], [55.709793, 5.870475]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#ff7f0e&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.7, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 2}
+            ).addTo(feature_group_be5c40c3459bd58ddf2f7d490d4f4e4e);
+        
+    
+            poly_line_1001f3f7c94a225f32aac661c7f6a2d9.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Going Dark — Event 1&lt;/b&gt;&lt;br&gt;MMSI: 219330000&lt;br&gt;Gap: 6.5 h | 14.2 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_39832efede3953bfbe3df7254e205409 = L.polyline(
+                [[55.79059, 5.888157], [55.832492, 5.821602]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#ff7f0e&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.7, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 2}
+            ).addTo(feature_group_be5c40c3459bd58ddf2f7d490d4f4e4e);
+        
+    
+            poly_line_39832efede3953bfbe3df7254e205409.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Going Dark — Event 2&lt;/b&gt;&lt;br&gt;MMSI: 219330000&lt;br&gt;Gap: 6.1 h | 6.2 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_e7f20ce237b2264b589c30a0e192160c = L.polyline(
+                [[55.925493, 5.786865], [55.684927, 6.097278]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#ff7f0e&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.7, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 2}
+            ).addTo(feature_group_be5c40c3459bd58ddf2f7d490d4f4e4e);
+        
+    
+            poly_line_e7f20ce237b2264b589c30a0e192160c.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Going Dark — Event 3&lt;/b&gt;&lt;br&gt;MMSI: 219330000&lt;br&gt;Gap: 8.1 h | 33.0 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_451d42478fb85a7fa7da110f787fdf39 = L.polyline(
+                [[55.662515, 6.059113], [55.70745, 6.165547]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#ff7f0e&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.7, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 2}
+            ).addTo(feature_group_be5c40c3459bd58ddf2f7d490d4f4e4e);
+        
+    
+            poly_line_451d42478fb85a7fa7da110f787fdf39.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Going Dark — Event 4&lt;/b&gt;&lt;br&gt;MMSI: 219330000&lt;br&gt;Gap: 4.0 h | 8.3 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            feature_group_be5c40c3459bd58ddf2f7d490d4f4e4e.addTo(map_afa783cb581efc01676f48c3f221a574);
+        
+    
+            var feature_group_eb9ff93e601c21618901939c7060faef = L.featureGroup(
+                {
+}
+            );
+        
+    
+            var circle_marker_823d02c3c014c350282ba899f58d91ea = L.circleMarker(
+                [55.803708, 6.025302],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_eb9ff93e601c21618901939c7060faef);
+        
+    
+            circle_marker_823d02c3c014c350282ba899f58d91ea.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Last known position&lt;/b&gt; | Event 1&lt;br&gt;MMSI: 219330000&lt;br&gt;(55.80371, 6.02530)&lt;br&gt;Gap: 6.5 h | 14.2 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_20bbd7fddb2900f135b227c9c22f2ce7 = L.circleMarker(
+                [55.79059, 5.888157],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_eb9ff93e601c21618901939c7060faef);
+        
+    
+            circle_marker_20bbd7fddb2900f135b227c9c22f2ce7.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Last known position&lt;/b&gt; | Event 2&lt;br&gt;MMSI: 219330000&lt;br&gt;(55.79059, 5.88816)&lt;br&gt;Gap: 6.1 h | 6.2 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_9f24e3659c15dd346979c96dae6b6561 = L.circleMarker(
+                [55.925493, 5.786865],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_eb9ff93e601c21618901939c7060faef);
+        
+    
+            circle_marker_9f24e3659c15dd346979c96dae6b6561.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Last known position&lt;/b&gt; | Event 3&lt;br&gt;MMSI: 219330000&lt;br&gt;(55.92549, 5.78686)&lt;br&gt;Gap: 8.1 h | 33.0 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_dafe2ac3565dc9b9f943323949a6b9e6 = L.circleMarker(
+                [55.662515, 6.059113],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_eb9ff93e601c21618901939c7060faef);
+        
+    
+            circle_marker_dafe2ac3565dc9b9f943323949a6b9e6.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Last known position&lt;/b&gt; | Event 4&lt;br&gt;MMSI: 219330000&lt;br&gt;(55.66251, 6.05911)&lt;br&gt;Gap: 4.0 h | 8.3 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            feature_group_eb9ff93e601c21618901939c7060faef.addTo(map_afa783cb581efc01676f48c3f221a574);
+        
+    
+            var feature_group_caa77ad1c4df74631b15675f6ad12e99 = L.featureGroup(
+                {
+}
+            );
+        
+    
+            var circle_marker_14f88d5a3aba4ae11a83c74901996a02 = L.circleMarker(
+                [55.709793, 5.870475],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#d62728&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_caa77ad1c4df74631b15675f6ad12e99);
+        
+    
+            circle_marker_14f88d5a3aba4ae11a83c74901996a02.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Reappearance&lt;/b&gt; | Event 1&lt;br&gt;MMSI: 219330000&lt;br&gt;(55.70979, 5.87047)&lt;br&gt;Gap: 6.5 h | 14.2 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_9eb9c36e618aa40e4683f01a53879b57 = L.circleMarker(
+                [55.832492, 5.821602],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#d62728&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_caa77ad1c4df74631b15675f6ad12e99);
+        
+    
+            circle_marker_9eb9c36e618aa40e4683f01a53879b57.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Reappearance&lt;/b&gt; | Event 2&lt;br&gt;MMSI: 219330000&lt;br&gt;(55.83249, 5.82160)&lt;br&gt;Gap: 6.1 h | 6.2 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_37dc44c17db4ff84bfebab42eab6cb00 = L.circleMarker(
+                [55.684927, 6.097278],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#d62728&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_caa77ad1c4df74631b15675f6ad12e99);
+        
+    
+            circle_marker_37dc44c17db4ff84bfebab42eab6cb00.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Reappearance&lt;/b&gt; | Event 3&lt;br&gt;MMSI: 219330000&lt;br&gt;(55.68493, 6.09728)&lt;br&gt;Gap: 8.1 h | 33.0 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_2c904171a4fab031c19340b131255134 = L.circleMarker(
+                [55.70745, 6.165547],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#d62728&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_caa77ad1c4df74631b15675f6ad12e99);
+        
+    
+            circle_marker_2c904171a4fab031c19340b131255134.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Reappearance&lt;/b&gt; | Event 4&lt;br&gt;MMSI: 219330000&lt;br&gt;(55.70745, 6.16555)&lt;br&gt;Gap: 4.0 h | 8.3 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            feature_group_caa77ad1c4df74631b15675f6ad12e99.addTo(map_afa783cb581efc01676f48c3f221a574);
+        
+    
+            var layer_control_6192b60178abe7a4c5afce4a8fe2cb61_layers = {
+                base_layers : {
+                    &quot;cartodbpositron&quot; : tile_layer_8d9faf55d9273be4adcae00fdc774fc8,
+                },
+                overlays :  {
+                    &quot;Blackout paths&quot; : feature_group_be5c40c3459bd58ddf2f7d490d4f4e4e,
+                    &quot;Last known positions&quot; : feature_group_eb9ff93e601c21618901939c7060faef,
+                    &quot;Reappearance positions&quot; : feature_group_caa77ad1c4df74631b15675f6ad12e99,
+                },
+            };
+            let layer_control_6192b60178abe7a4c5afce4a8fe2cb61 = L.control.layers(
+                layer_control_6192b60178abe7a4c5afce4a8fe2cb61_layers.base_layers,
+                layer_control_6192b60178abe7a4c5afce4a8fe2cb61_layers.overlays,
+                {
+  &quot;position&quot;: &quot;topright&quot;,
+  &quot;collapsed&quot;: false,
+  &quot;autoZIndex&quot;: true,
+}
+            ).addTo(map_afa783cb581efc01676f48c3f221a574);
+
+        
+    
+            map_afa783cb581efc01676f48c3f221a574.fitBounds(
+                [[55.6230683, 5.7300626999999995], [55.9649397, 6.2223493]],
+                {}
+            );
+        
+&lt;/script&gt;
+&lt;/html&gt;" sandbox="allow-scripts allow-same-origin"></iframe>
+  </div>
+</section>
+
+
+<!-- ════════════════════════════════════════════════════
+     SLIDE 4 — D1 TELEPORTATION
+════════════════════════════════════════════════════ -->
+<section class="slide map-slide" id="s4">
+  <div class="map-bar">
+    <div class="map-bar-l">
+      <h2>👥 Anomaly D1 — Near-Simultaneous Identity Cloning</h2>
+      <p>Blue = Vessel A (southern cluster) &nbsp;·&nbsp; Orange = Vessel B (northern cluster) &nbsp;·&nbsp; Dashed = same MMSI, same time, two locations</p>
+    </div>
+    <div style="display:flex;gap:8px">
+      <span class="mbadge mbadge-b">Gap &le; 30 min</span>
+      <span class="mbadge mbadge-b">Speed &gt; 60 kn</span>
+    </div>
+  </div>
+  <div class="map-iframe-wrap">
+    <iframe srcdoc="&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;head&gt;
+    
+    &lt;meta http-equiv=&quot;content-type&quot; content=&quot;text/html; charset=UTF-8&quot; /&gt;
+    &lt;script src=&quot;https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js&quot;&gt;&lt;/script&gt;
+    &lt;script src=&quot;https://code.jquery.com/jquery-3.7.1.min.js&quot;&gt;&lt;/script&gt;
+    &lt;script src=&quot;https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js&quot;&gt;&lt;/script&gt;
+    &lt;script src=&quot;https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js&quot;&gt;&lt;/script&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css&quot;/&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css&quot;/&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css&quot;/&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css&quot;/&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css&quot;/&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css&quot;/&gt;
+    
+            &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width,
+                initial-scale=1.0, maximum-scale=1.0, user-scalable=no&quot; /&gt;
+            &lt;style&gt;
+                #map_d027d049fe270ea1a9367735e6c8e787 {
+                    position: relative;
+                    width: 100.0%;
+                    height: 100.0%;
+                    left: 0.0%;
+                    top: 0.0%;
+                }
+                .leaflet-container { font-size: 1rem; }
+            &lt;/style&gt;
+
+            &lt;style&gt;html, body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            &lt;/style&gt;
+
+            &lt;style&gt;#map {
+                position:absolute;
+                top:0;
+                bottom:0;
+                right:0;
+                left:0;
+                }
+            &lt;/style&gt;
+
+            &lt;script&gt;
+                L_NO_TOUCH = false;
+                L_DISABLE_3D = false;
+            &lt;/script&gt;
+
+        
+&lt;/head&gt;
+&lt;body&gt;
+    
+    
+    &lt;div style=&quot;position:fixed;bottom:30px;left:30px;z-index:1000;background:white;
+        padding:8px 14px;border:1px solid #999;border-radius:4px;
+        font:13px Arial,sans-serif;line-height:1.8;
+        box-shadow:1px 1px 4px rgba(0,0,0,0.2);&quot;&gt;
+        &lt;b&gt;D1 — Near-Simultaneous Cloning&lt;/b&gt;&lt;br&gt;
+        &lt;span style=&quot;color:#1f77b4;&quot;&gt;&amp;#9679;&lt;/span&gt; Vessel A — southern cluster&lt;br&gt;
+        &lt;span style=&quot;color:#ff7f0e;&quot;&gt;&amp;#9679;&lt;/span&gt; Vessel B — northern cluster&lt;br&gt;
+        &lt;span style=&quot;color:#888888;&quot;&gt;- - -&lt;/span&gt; Same MMSI, same time (two ships)&lt;br&gt;
+        &lt;span style=&quot;font-size:11px;color:#aaa;&quot;&gt;Cluster split at 57.73°N&lt;/span&gt;
+    &lt;/div&gt;
+    
+    
+            &lt;div class=&quot;folium-map&quot; id=&quot;map_d027d049fe270ea1a9367735e6c8e787&quot; &gt;&lt;/div&gt;
+        
+&lt;/body&gt;
+&lt;script&gt;
+    
+    
+            var map_d027d049fe270ea1a9367735e6c8e787 = L.map(
+                &quot;map_d027d049fe270ea1a9367735e6c8e787&quot;,
+                {
+                    center: [58.2146065, 17.0194415],
+                    crs: L.CRS.EPSG3857,
+                    ...{
+  &quot;zoom&quot;: 5,
+  &quot;zoomControl&quot;: true,
+  &quot;preferCanvas&quot;: false,
+}
+
+                }
+            );
+            L.control.scale().addTo(map_d027d049fe270ea1a9367735e6c8e787);
+
+            
+
+        
+    
+            var tile_layer_25ca8773b52c86886f98b9be1b486640 = L.tileLayer(
+                &quot;https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png&quot;,
+                {
+  &quot;minZoom&quot;: 0,
+  &quot;maxZoom&quot;: 20,
+  &quot;maxNativeZoom&quot;: 20,
+  &quot;noWrap&quot;: false,
+  &quot;attribution&quot;: &quot;\u0026copy; \u003ca href=\&quot;https://www.openstreetmap.org/copyright\&quot;\u003eOpenStreetMap\u003c/a\u003e contributors \u0026copy; \u003ca href=\&quot;https://carto.com/attributions\&quot;\u003eCARTO\u003c/a\u003e&quot;,
+  &quot;subdomains&quot;: &quot;abcd&quot;,
+  &quot;detectRetina&quot;: false,
+  &quot;tms&quot;: false,
+  &quot;opacity&quot;: 1,
+}
+
+            );
+        
+    
+            tile_layer_25ca8773b52c86886f98b9be1b486640.addTo(map_d027d049fe270ea1a9367735e6c8e787);
+        
+    
+            map_d027d049fe270ea1a9367735e6c8e787.fitBounds(
+                [[54.85975695, 11.400826550000001], [61.56945605, 22.63805645]],
+                {}
+            );
+        
+    
+            var feature_group_c0548e8af1b52d7f322e2a2f2030aca8 = L.featureGroup(
+                {
+}
+            );
+        
+    
+            var poly_line_14e1dfaaf6d3efdff4c211fb0408878e = L.polyline(
+                [[55.787695, 12.714977], [60.435942, 19.204683]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_14e1dfaaf6d3efdff4c211fb0408878e.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 1&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 37793.2 kn | 641.6 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_3a57f2d0783e446948ef082712290711 = L.polyline(
+                [[55.797013, 12.719522], [60.687005, 20.97762]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_3a57f2d0783e446948ef082712290711.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 2&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 29418.0 kn | 726.4 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_2d26c572fe96136a46c8f1d99a6129f0 = L.polyline(
+                [[55.801557, 12.720587], [60.297905, 19.013352]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_2d26c572fe96136a46c8f1d99a6129f0.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 3&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 22797.4 kn | 621.6 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_a5582ff1710c0b155b21fc5fe1d86ac0 = L.polyline(
+                [[55.897132, 12.774843], [60.688678, 20.977955]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_a5582ff1710c0b155b21fc5fe1d86ac0.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 4&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 3242.9 kn | 715.7 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_4994b08509da5123367253455aedc31b = L.polyline(
+                [[55.897145, 12.774987], [60.688592, 20.977835]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_4994b08509da5123367253455aedc31b.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 5&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 15631.2 kn | 715.7 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_51677a96f821c8c907bed31c671a773b = L.polyline(
+                [[60.688592, 20.977835], [55.897145, 12.775013]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_51677a96f821c8c907bed31c671a773b.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 6&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 14958.8 kn | 715.7 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_3dd7b033e48220dc6356eb801705899f = L.polyline(
+                [[60.688678, 20.977955], [55.897145, 12.774987]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_3dd7b033e48220dc6356eb801705899f.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 7&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 2960.0 kn | 715.7 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_ab82e30e76903770d27f86d830959e3a = L.polyline(
+                [[55.897145, 12.775013], [60.701075, 20.240003]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_ab82e30e76903770d27f86d830959e3a.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 8&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 2801.0 kn | 688.8 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_8b4b11cb716b012a0a679b31fdb40231 = L.polyline(
+                [[55.897137, 12.775257], [60.305153, 19.013125]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_8b4b11cb716b012a0a679b31fdb40231.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 9&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 1396.7 kn | 611.5 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_b92858db12ee04366f69bf529affdd32 = L.polyline(
+                [[60.305153, 19.013125], [55.897125, 12.775177]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_b92858db12ee04366f69bf529affdd32.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 10&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 2899.1 kn | 611.5 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_764e13a36fc3bef61f41aded1f3c2d42 = L.polyline(
+                [[55.897018, 12.775137], [60.688687, 20.977787]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_764e13a36fc3bef61f41aded1f3c2d42.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 11&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 2146.9 kn | 715.7 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_9bbb01e2ef83910a0df39ab3d9708f38 = L.polyline(
+                [[60.688687, 20.977787], [55.897088, 12.775523]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_9bbb01e2ef83910a0df39ab3d9708f38.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 12&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 22805.8 kn | 715.7 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_8627a8b40d2e0f9e9efd4078f81d7c94 = L.polyline(
+                [[55.897102, 12.775467], [60.686935, 20.977142]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_8627a8b40d2e0f9e9efd4078f81d7c94.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 13&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 4575.1 kn | 715.5 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_9959ecf12ee40dfef254c9035536326b = L.polyline(
+                [[60.686935, 20.977142], [55.897115, 12.775343]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_9959ecf12ee40dfef254c9035536326b.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 14&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 2287.6 kn | 715.5 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_6efa840cc7f872f86717418544f561d9 = L.polyline(
+                [[55.897115, 12.775343], [59.661667, 19.870315]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_6efa840cc7f872f86717418544f561d9.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 15&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 1289.0 kn | 592.8 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_d6034516a88f600a12bcd567e9f8aba0 = L.polyline(
+                [[59.661667, 19.870315], [55.89708, 12.77541]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_d6034516a88f600a12bcd567e9f8aba0.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 16&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 13557.5 kn | 592.8 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_86a89b719c62c7d736edd6ddbb127e18 = L.polyline(
+                [[55.896983, 12.773983], [59.553857, 20.152515]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_86a89b719c62c7d736edd6ddbb127e18.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 17&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 19027.6 kn | 597.1 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_01e1bc3fd114ad4cba066f652bffcd13 = L.polyline(
+                [[59.553857, 20.152515], [55.633953, 12.69743]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_01e1bc3fd114ad4cba066f652bffcd13.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 18&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 7193.3 kn | 621.7 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_e1d5e7b44d6fe8453c6781bc6e2288ba = L.polyline(
+                [[55.633953, 12.69743], [55.897007, 12.77404]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_e1d5e7b44d6fe8453c6781bc6e2288ba.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 19&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 163.2 kn | 29.6 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_58462f6d8d339e009587e1ac71227c82 = L.polyline(
+                [[55.896998, 12.774033], [60.702223, 19.872467]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_58462f6d8d339e009587e1ac71227c82.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 20&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 17990.6 kn | 675.6 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_ce099f319ffe4efb51ca1263336a180e = L.polyline(
+                [[55.897083, 12.774337], [60.435942, 19.204683]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_ce099f319ffe4efb51ca1263336a180e.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 21&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 22658.0 kn | 629.4 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_61d039a6835f39248b0e24e9103dd6fb = L.polyline(
+                [[60.435942, 19.204683], [55.897042, 12.774187]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_61d039a6835f39248b0e24e9103dd6fb.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 22&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 32198.7 kn | 629.4 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_7d0113d30c8c3df7d9783bbc38724b71 = L.polyline(
+                [[55.897035, 12.774167], [60.686937, 20.977145]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_7d0113d30c8c3df7d9783bbc38724b71.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 23&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 1700.4 kn | 715.6 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_1f72f45d01c9e4bdc119383c7ce4a2b0 = L.polyline(
+                [[60.686937, 20.977145], [60.79526, 21.341453]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_1f72f45d01c9e4bdc119383c7ce4a2b0.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 24&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 145.8 kn | 23.2 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_66605d0c9b5425437f1b13a5c35cb56c = L.polyline(
+                [[60.79526, 21.341453], [55.897, 12.774027]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_66605d0c9b5425437f1b13a5c35cb56c.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 25&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 3736.7 kn | 738.2 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_09c47f593d364c7b0827ace72182dbd0 = L.polyline(
+                [[55.896982, 12.773973], [60.794942, 21.339283]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_09c47f593d364c7b0827ace72182dbd0.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 26&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 29889.5 kn | 738.1 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_e4ab86880bcd7739b3f0e99936c1ce94 = L.polyline(
+                [[60.794942, 21.339283], [55.896988, 12.774023]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_e4ab86880bcd7739b3f0e99936c1ce94.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 27&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 1339.6 kn | 738.1 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_168e5b54ece554956d892d6551ad567a = L.polyline(
+                [[55.897055, 12.773783], [60.701075, 20.240003]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_168e5b54ece554956d892d6551ad567a.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 28&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 6142.1 kn | 688.8 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_8714e2acc7ea2975d9c9a61b9e97f056 = L.polyline(
+                [[60.701075, 20.240003], [55.897092, 12.774083]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_8714e2acc7ea2975d9c9a61b9e97f056.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 29&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 2502.7 kn | 688.8 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_710a876585afcfbaaa984a4b101387b4 = L.polyline(
+                [[55.897092, 12.77403], [60.297438, 19.013353]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_710a876585afcfbaaa984a4b101387b4.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 30&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 4947.7 kn | 610.9 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_d3f805ca2848b1457f217e226cfa647b = L.polyline(
+                [[60.297438, 19.013353], [55.89713, 12.774063]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_d3f805ca2848b1457f217e226cfa647b.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 31&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 4968.4 kn | 610.9 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_f71692ede170a6909fb3b981f733212e = L.polyline(
+                [[55.896968, 12.773655], [60.795007, 21.340685]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_f71692ede170a6909fb3b981f733212e.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 32&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 9024.1 kn | 738.1 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_55429974d40e30897ea6afef1284ef18 = L.polyline(
+                [[60.795007, 21.340685], [55.89709, 12.774008]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_55429974d40e30897ea6afef1284ef18.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 33&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 3525.3 kn | 738.1 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var poly_line_872d626cc9abf57607047979309208d9 = L.polyline(
+                [[55.897015, 12.774325], [60.435942, 19.204683]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#888888&quot;, &quot;dashArray&quot;: &quot;6 4&quot;, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#888888&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.6, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_c0548e8af1b52d7f322e2a2f2030aca8);
+        
+    
+            poly_line_872d626cc9abf57607047979309208d9.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Same MMSI, same time — Event 34&lt;/b&gt;&lt;br&gt;MMSI: 246782000 | 1831.7 kn | 629.4 km&lt;br&gt;Impossible for one ship → two vessels
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            feature_group_c0548e8af1b52d7f322e2a2f2030aca8.addTo(map_d027d049fe270ea1a9367735e6c8e787);
+        
+    
+            var feature_group_bc1432ec90c878c4bf5d13afaf9518d9 = L.featureGroup(
+                {
+}
+            );
+        
+    
+            var poly_line_3896f1cd0ac414ff3229b097c3761d17 = L.polyline(
+                [[55.633953, 12.69743], [55.633953, 12.69743], [55.787695, 12.714977], [55.797013, 12.719522], [55.801557, 12.720587], [55.896968, 12.773655], [55.896982, 12.773973], [55.896983, 12.773983], [55.896988, 12.774023], [55.896998, 12.774033], [55.897, 12.774027], [55.897007, 12.77404], [55.897015, 12.774325], [55.897018, 12.775137], [55.897035, 12.774167], [55.897042, 12.774187], [55.897055, 12.773783], [55.89708, 12.77541], [55.897083, 12.774337], [55.897088, 12.775523], [55.89709, 12.774008], [55.897092, 12.774083], [55.897092, 12.77403], [55.897102, 12.775467], [55.897115, 12.775343], [55.897115, 12.775343], [55.897125, 12.775177], [55.89713, 12.774063], [55.897132, 12.774843], [55.897137, 12.775257], [55.897145, 12.774987], [55.897145, 12.775013], [55.897145, 12.774987], [55.897145, 12.775013]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#1f77b4&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.85, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 3}
+            ).addTo(feature_group_bc1432ec90c878c4bf5d13afaf9518d9);
+        
+    
+            poly_line_3896f1cd0ac414ff3229b097c3761d17.bindTooltip(
+                `&lt;div&gt;
+                     Vessel A trajectory
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            feature_group_bc1432ec90c878c4bf5d13afaf9518d9.addTo(map_d027d049fe270ea1a9367735e6c8e787);
+        
+    
+            var feature_group_55d285e5eafe9358651fda50ac22eb09 = L.featureGroup(
+                {
+}
+            );
+        
+    
+            var poly_line_c0b32277aced77b9bceac10f49e7d0a5 = L.polyline(
+                [[59.553857, 20.152515], [59.553857, 20.152515], [59.661667, 19.870315], [59.661667, 19.870315], [60.297438, 19.013353], [60.297438, 19.013353], [60.297905, 19.013352], [60.305153, 19.013125], [60.305153, 19.013125], [60.435942, 19.204683], [60.435942, 19.204683], [60.435942, 19.204683], [60.435942, 19.204683], [60.686935, 20.977142], [60.686935, 20.977142], [60.686937, 20.977145], [60.686937, 20.977145], [60.687005, 20.97762], [60.688592, 20.977835], [60.688592, 20.977835], [60.688678, 20.977955], [60.688678, 20.977955], [60.688687, 20.977787], [60.688687, 20.977787], [60.701075, 20.240003], [60.701075, 20.240003], [60.701075, 20.240003], [60.702223, 19.872467], [60.794942, 21.339283], [60.794942, 21.339283], [60.795007, 21.340685], [60.795007, 21.340685], [60.79526, 21.341453], [60.79526, 21.341453]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#ff7f0e&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.85, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 3}
+            ).addTo(feature_group_55d285e5eafe9358651fda50ac22eb09);
+        
+    
+            poly_line_c0b32277aced77b9bceac10f49e7d0a5.bindTooltip(
+                `&lt;div&gt;
+                     Vessel B trajectory
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            feature_group_55d285e5eafe9358651fda50ac22eb09.addTo(map_d027d049fe270ea1a9367735e6c8e787);
+        
+    
+            var feature_group_496b8708fc2a565e1b8c711697904ef4 = L.featureGroup(
+                {
+}
+            );
+        
+    
+            var circle_marker_686b2d101287e81d00a0ec3abc87d8db = L.circleMarker(
+                [55.787695, 12.714977],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_686b2d101287e81d00a0ec3abc87d8db.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 1&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.78769, 12.71498)&lt;br&gt;37793.2 kn | 641.6 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_1630eeb132e571698205fd8d4031c1c8 = L.circleMarker(
+                [55.797013, 12.719522],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_1630eeb132e571698205fd8d4031c1c8.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 2&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.79701, 12.71952)&lt;br&gt;29418.0 kn | 726.4 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_9a2ecb501c91abe65286f5b9d18c19d1 = L.circleMarker(
+                [55.801557, 12.720587],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_9a2ecb501c91abe65286f5b9d18c19d1.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 3&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.80156, 12.72059)&lt;br&gt;22797.4 kn | 621.6 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_0beebceb86de4682d79f3c04db5851ae = L.circleMarker(
+                [55.897132, 12.774843],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_0beebceb86de4682d79f3c04db5851ae.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 4&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89713, 12.77484)&lt;br&gt;3242.9 kn | 715.7 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_4f12ebe2e8ea7d9565d02bfd0681d33c = L.circleMarker(
+                [55.897145, 12.774987],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_4f12ebe2e8ea7d9565d02bfd0681d33c.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 5&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89715, 12.77499)&lt;br&gt;15631.2 kn | 715.7 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_131917e095a12673350801af7e251495 = L.circleMarker(
+                [55.897145, 12.775013],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_131917e095a12673350801af7e251495.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 6&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89715, 12.77501)&lt;br&gt;14958.8 kn | 715.7 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_10078221cdc686d4a527ebe96c62c3af = L.circleMarker(
+                [55.897145, 12.774987],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_10078221cdc686d4a527ebe96c62c3af.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 7&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89715, 12.77499)&lt;br&gt;2960.0 kn | 715.7 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_f39bee1c5485010c9fac5468bc1ee204 = L.circleMarker(
+                [55.897145, 12.775013],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_f39bee1c5485010c9fac5468bc1ee204.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 8&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89715, 12.77501)&lt;br&gt;2801.0 kn | 688.8 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_e228460276f1fbb5c78b29aa0167a90d = L.circleMarker(
+                [55.897137, 12.775257],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_e228460276f1fbb5c78b29aa0167a90d.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 9&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89714, 12.77526)&lt;br&gt;1396.7 kn | 611.5 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_55092c25e30aeb608d12bf8c0657c7a2 = L.circleMarker(
+                [55.897125, 12.775177],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_55092c25e30aeb608d12bf8c0657c7a2.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 10&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89713, 12.77518)&lt;br&gt;2899.1 kn | 611.5 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_7493f768ede847ed180b991de21497c3 = L.circleMarker(
+                [55.897018, 12.775137],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_7493f768ede847ed180b991de21497c3.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 11&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89702, 12.77514)&lt;br&gt;2146.9 kn | 715.7 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_d2fe2a6ae5aa7309f43df83ed18fed9e = L.circleMarker(
+                [55.897088, 12.775523],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_d2fe2a6ae5aa7309f43df83ed18fed9e.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 12&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89709, 12.77552)&lt;br&gt;22805.8 kn | 715.7 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_cf77de3584493f64576760c5dd0293d5 = L.circleMarker(
+                [55.897102, 12.775467],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_cf77de3584493f64576760c5dd0293d5.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 13&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89710, 12.77547)&lt;br&gt;4575.1 kn | 715.5 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_c5efe609658350938aa0dc72ef713b49 = L.circleMarker(
+                [55.897115, 12.775343],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_c5efe609658350938aa0dc72ef713b49.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 14&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89711, 12.77534)&lt;br&gt;2287.6 kn | 715.5 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_4892e691603ecca8889c3ff8a9c2f8bf = L.circleMarker(
+                [55.897115, 12.775343],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_4892e691603ecca8889c3ff8a9c2f8bf.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 15&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89711, 12.77534)&lt;br&gt;1289.0 kn | 592.8 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_eb9026ead283bdfa33880355244bdfdc = L.circleMarker(
+                [55.89708, 12.77541],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_eb9026ead283bdfa33880355244bdfdc.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 16&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89708, 12.77541)&lt;br&gt;13557.5 kn | 592.8 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_5669d6de640ffd703a73b53d96b2b2d3 = L.circleMarker(
+                [55.896983, 12.773983],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_5669d6de640ffd703a73b53d96b2b2d3.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 17&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89698, 12.77398)&lt;br&gt;19027.6 kn | 597.1 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_c9c9ec5841dfce48d44b424c8ecb4fa9 = L.circleMarker(
+                [55.633953, 12.69743],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_c9c9ec5841dfce48d44b424c8ecb4fa9.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 18&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.63395, 12.69743)&lt;br&gt;7193.3 kn | 621.7 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_7f22f39354bc1d95d8c46b7c09d771b8 = L.circleMarker(
+                [55.633953, 12.69743],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_7f22f39354bc1d95d8c46b7c09d771b8.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 19&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.63395, 12.69743)&lt;br&gt;163.2 kn | 29.6 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_8ee33b404850a51c02d02e315aad365d = L.circleMarker(
+                [55.897007, 12.77404],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_8ee33b404850a51c02d02e315aad365d.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 19&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89701, 12.77404)&lt;br&gt;163.2 kn | 29.6 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_8239ee0a6d1f1e3078345aa20bab2741 = L.circleMarker(
+                [55.896998, 12.774033],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_8239ee0a6d1f1e3078345aa20bab2741.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 20&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89700, 12.77403)&lt;br&gt;17990.6 kn | 675.6 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_c807d665941cbeaf0862b3b7b226090f = L.circleMarker(
+                [55.897083, 12.774337],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_c807d665941cbeaf0862b3b7b226090f.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 21&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89708, 12.77434)&lt;br&gt;22658.0 kn | 629.4 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_31113c72415146cfe3904b0efcab0742 = L.circleMarker(
+                [55.897042, 12.774187],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_31113c72415146cfe3904b0efcab0742.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 22&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89704, 12.77419)&lt;br&gt;32198.7 kn | 629.4 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_da2fca5cc8c22b70d8878629ec923b5d = L.circleMarker(
+                [55.897035, 12.774167],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_da2fca5cc8c22b70d8878629ec923b5d.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 23&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89704, 12.77417)&lt;br&gt;1700.4 kn | 715.6 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_3ece157aa35b4353271a313e7c06d763 = L.circleMarker(
+                [55.897, 12.774027],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_3ece157aa35b4353271a313e7c06d763.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 25&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89700, 12.77403)&lt;br&gt;3736.7 kn | 738.2 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_24cacd63e5b2889bbe2feb78b27c0df6 = L.circleMarker(
+                [55.896982, 12.773973],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_24cacd63e5b2889bbe2feb78b27c0df6.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 26&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89698, 12.77397)&lt;br&gt;29889.5 kn | 738.1 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_dda8da0dd61ff2ec5660ecf833ba5a17 = L.circleMarker(
+                [55.896988, 12.774023],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_dda8da0dd61ff2ec5660ecf833ba5a17.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 27&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89699, 12.77402)&lt;br&gt;1339.6 kn | 738.1 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_543897815f8672917bc4d4f3238d517f = L.circleMarker(
+                [55.897055, 12.773783],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_543897815f8672917bc4d4f3238d517f.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 28&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89706, 12.77378)&lt;br&gt;6142.1 kn | 688.8 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_aa2300636f8589b3fa9c5afaaec604a6 = L.circleMarker(
+                [55.897092, 12.774083],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_aa2300636f8589b3fa9c5afaaec604a6.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 29&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89709, 12.77408)&lt;br&gt;2502.7 kn | 688.8 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_1dd9527ae2d14a1d3538a4eb6305cba9 = L.circleMarker(
+                [55.897092, 12.77403],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_1dd9527ae2d14a1d3538a4eb6305cba9.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 30&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89709, 12.77403)&lt;br&gt;4947.7 kn | 610.9 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_909fd6e836f0580b4f9ebd0c21adfa19 = L.circleMarker(
+                [55.89713, 12.774063],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_909fd6e836f0580b4f9ebd0c21adfa19.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 31&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89713, 12.77406)&lt;br&gt;4968.4 kn | 610.9 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_ad1f1639498361e534a438f8abed1832 = L.circleMarker(
+                [55.896968, 12.773655],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_ad1f1639498361e534a438f8abed1832.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 32&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89697, 12.77365)&lt;br&gt;9024.1 kn | 738.1 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_88e1c6c45ba07ca3aa64e54cfc20c7fc = L.circleMarker(
+                [55.89709, 12.774008],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_88e1c6c45ba07ca3aa64e54cfc20c7fc.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 33&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89709, 12.77401)&lt;br&gt;3525.3 kn | 738.1 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_82da34fece89f8fa5f8f8e1d7cf17e73 = L.circleMarker(
+                [55.897015, 12.774325],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#1f77b4&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_496b8708fc2a565e1b8c711697904ef4);
+        
+    
+            circle_marker_82da34fece89f8fa5f8f8e1d7cf17e73.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel A (southern)&lt;/b&gt; | Event 34&lt;br&gt;MMSI: 246782000&lt;br&gt;(55.89702, 12.77432)&lt;br&gt;1831.7 kn | 629.4 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            feature_group_496b8708fc2a565e1b8c711697904ef4.addTo(map_d027d049fe270ea1a9367735e6c8e787);
+        
+    
+            var feature_group_846aec241a121fa5b849eff00930e36c = L.featureGroup(
+                {
+}
+            );
+        
+    
+            var circle_marker_9500a512080e7c1a4fedd980d2170326 = L.circleMarker(
+                [60.435942, 19.204683],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_9500a512080e7c1a4fedd980d2170326.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 1&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.43594, 19.20468)&lt;br&gt;37793.2 kn | 641.6 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_3a79bcee9bde3e507a0fe75ac358f3e1 = L.circleMarker(
+                [60.687005, 20.97762],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_3a79bcee9bde3e507a0fe75ac358f3e1.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 2&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.68700, 20.97762)&lt;br&gt;29418.0 kn | 726.4 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_ad09625e8e4311527f6edca31846a6bf = L.circleMarker(
+                [60.297905, 19.013352],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_ad09625e8e4311527f6edca31846a6bf.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 3&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.29791, 19.01335)&lt;br&gt;22797.4 kn | 621.6 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_3c18dd597b64b2e7560b63750bafb99e = L.circleMarker(
+                [60.688678, 20.977955],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_3c18dd597b64b2e7560b63750bafb99e.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 4&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.68868, 20.97796)&lt;br&gt;3242.9 kn | 715.7 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_ee319c9162ee9d83cd5790ac1b50265f = L.circleMarker(
+                [60.688592, 20.977835],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_ee319c9162ee9d83cd5790ac1b50265f.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 5&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.68859, 20.97783)&lt;br&gt;15631.2 kn | 715.7 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_5c65c8f932e559314197ec7d5ee3392d = L.circleMarker(
+                [60.688592, 20.977835],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_5c65c8f932e559314197ec7d5ee3392d.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 6&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.68859, 20.97783)&lt;br&gt;14958.8 kn | 715.7 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_a0d4c18772b7ecdef4c4ddd628153077 = L.circleMarker(
+                [60.688678, 20.977955],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_a0d4c18772b7ecdef4c4ddd628153077.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 7&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.68868, 20.97796)&lt;br&gt;2960.0 kn | 715.7 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_96dcffe6f301ad6d4dc880e384760ee6 = L.circleMarker(
+                [60.701075, 20.240003],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_96dcffe6f301ad6d4dc880e384760ee6.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 8&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.70108, 20.24000)&lt;br&gt;2801.0 kn | 688.8 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_6415f494918698678e7491cd379a5dad = L.circleMarker(
+                [60.305153, 19.013125],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_6415f494918698678e7491cd379a5dad.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 9&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.30515, 19.01312)&lt;br&gt;1396.7 kn | 611.5 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_6145a69a55730e33868c1eb93d6eeac6 = L.circleMarker(
+                [60.305153, 19.013125],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_6145a69a55730e33868c1eb93d6eeac6.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 10&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.30515, 19.01312)&lt;br&gt;2899.1 kn | 611.5 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_efcd802a0fa987ab418c6289bb05b95a = L.circleMarker(
+                [60.688687, 20.977787],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_efcd802a0fa987ab418c6289bb05b95a.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 11&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.68869, 20.97779)&lt;br&gt;2146.9 kn | 715.7 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_3acda9ae2a757065599051c5bbab2024 = L.circleMarker(
+                [60.688687, 20.977787],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_3acda9ae2a757065599051c5bbab2024.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 12&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.68869, 20.97779)&lt;br&gt;22805.8 kn | 715.7 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_67299f10941c8d4d583156e4ed7b2b16 = L.circleMarker(
+                [60.686935, 20.977142],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_67299f10941c8d4d583156e4ed7b2b16.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 13&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.68693, 20.97714)&lt;br&gt;4575.1 kn | 715.5 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_c3ce083325c98dacffb76701e20c115b = L.circleMarker(
+                [60.686935, 20.977142],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_c3ce083325c98dacffb76701e20c115b.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 14&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.68693, 20.97714)&lt;br&gt;2287.6 kn | 715.5 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_3b1ddc0f9125431f7f71d42105e8df37 = L.circleMarker(
+                [59.661667, 19.870315],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_3b1ddc0f9125431f7f71d42105e8df37.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 15&lt;br&gt;MMSI: 246782000&lt;br&gt;(59.66167, 19.87032)&lt;br&gt;1289.0 kn | 592.8 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_1705cdaf159e9001bc32d11a49f59956 = L.circleMarker(
+                [59.661667, 19.870315],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_1705cdaf159e9001bc32d11a49f59956.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 16&lt;br&gt;MMSI: 246782000&lt;br&gt;(59.66167, 19.87032)&lt;br&gt;13557.5 kn | 592.8 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_adfc19206bad1e31d7482254737f52e8 = L.circleMarker(
+                [59.553857, 20.152515],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_adfc19206bad1e31d7482254737f52e8.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 17&lt;br&gt;MMSI: 246782000&lt;br&gt;(59.55386, 20.15252)&lt;br&gt;19027.6 kn | 597.1 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_b385af3bb64d7b96232d9ed1b70062cc = L.circleMarker(
+                [59.553857, 20.152515],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_b385af3bb64d7b96232d9ed1b70062cc.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 18&lt;br&gt;MMSI: 246782000&lt;br&gt;(59.55386, 20.15252)&lt;br&gt;7193.3 kn | 621.7 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_6447ccabaa2a507d653c39fac6b2c601 = L.circleMarker(
+                [60.702223, 19.872467],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_6447ccabaa2a507d653c39fac6b2c601.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 20&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.70222, 19.87247)&lt;br&gt;17990.6 kn | 675.6 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_ce692daaa4761a3d8c8b172403ff306a = L.circleMarker(
+                [60.435942, 19.204683],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_ce692daaa4761a3d8c8b172403ff306a.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 21&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.43594, 19.20468)&lt;br&gt;22658.0 kn | 629.4 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_d36a4d3b829e2bb3038819f3be5e0913 = L.circleMarker(
+                [60.435942, 19.204683],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_d36a4d3b829e2bb3038819f3be5e0913.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 22&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.43594, 19.20468)&lt;br&gt;32198.7 kn | 629.4 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_67c2eca24231cb5b7876e217dbc7ded4 = L.circleMarker(
+                [60.686937, 20.977145],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_67c2eca24231cb5b7876e217dbc7ded4.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 23&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.68694, 20.97715)&lt;br&gt;1700.4 kn | 715.6 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_69f99252fce520ca229b677e491573fc = L.circleMarker(
+                [60.686937, 20.977145],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_69f99252fce520ca229b677e491573fc.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 24&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.68694, 20.97715)&lt;br&gt;145.8 kn | 23.2 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_94f01f3f687bec28f99910873c2bcfbb = L.circleMarker(
+                [60.79526, 21.341453],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_94f01f3f687bec28f99910873c2bcfbb.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 24&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.79526, 21.34145)&lt;br&gt;145.8 kn | 23.2 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_abcbc59c61db9369753765c506cf1bc0 = L.circleMarker(
+                [60.79526, 21.341453],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_abcbc59c61db9369753765c506cf1bc0.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 25&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.79526, 21.34145)&lt;br&gt;3736.7 kn | 738.2 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_f41b836aa1c674d99ff37b062aa22964 = L.circleMarker(
+                [60.794942, 21.339283],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_f41b836aa1c674d99ff37b062aa22964.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 26&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.79494, 21.33928)&lt;br&gt;29889.5 kn | 738.1 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_209ca260998bd82175235b9751b77a19 = L.circleMarker(
+                [60.794942, 21.339283],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_209ca260998bd82175235b9751b77a19.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 27&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.79494, 21.33928)&lt;br&gt;1339.6 kn | 738.1 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_df14a2a4edb3754d569fc8c0cbbc7f55 = L.circleMarker(
+                [60.701075, 20.240003],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_df14a2a4edb3754d569fc8c0cbbc7f55.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 28&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.70108, 20.24000)&lt;br&gt;6142.1 kn | 688.8 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_62834a13d56ea36c648761cfa1a80fda = L.circleMarker(
+                [60.701075, 20.240003],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_62834a13d56ea36c648761cfa1a80fda.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 29&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.70108, 20.24000)&lt;br&gt;2502.7 kn | 688.8 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_fb2cfd88d3263b814ebee29e8b332f25 = L.circleMarker(
+                [60.297438, 19.013353],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_fb2cfd88d3263b814ebee29e8b332f25.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 30&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.29744, 19.01335)&lt;br&gt;4947.7 kn | 610.9 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_80ca5ffa13a48ae733db4bd9906b77dc = L.circleMarker(
+                [60.297438, 19.013353],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_80ca5ffa13a48ae733db4bd9906b77dc.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 31&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.29744, 19.01335)&lt;br&gt;4968.4 kn | 610.9 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_7f16fc1d3b2bff14650f607537844874 = L.circleMarker(
+                [60.795007, 21.340685],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_7f16fc1d3b2bff14650f607537844874.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 32&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.79501, 21.34069)&lt;br&gt;9024.1 kn | 738.1 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_49d12307467be9bda572fffc6c54c88c = L.circleMarker(
+                [60.795007, 21.340685],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_49d12307467be9bda572fffc6c54c88c.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 33&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.79501, 21.34069)&lt;br&gt;3525.3 kn | 738.1 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            var circle_marker_1b0dfc1445a3c1ce782f42bbb30ab2a6 = L.circleMarker(
+                [60.435942, 19.204683],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_846aec241a121fa5b849eff00930e36c);
+        
+    
+            circle_marker_1b0dfc1445a3c1ce782f42bbb30ab2a6.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Vessel B (northern)&lt;/b&gt; | Event 34&lt;br&gt;MMSI: 246782000&lt;br&gt;(60.43594, 19.20468)&lt;br&gt;1831.7 kn | 629.4 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            feature_group_846aec241a121fa5b849eff00930e36c.addTo(map_d027d049fe270ea1a9367735e6c8e787);
+        
+    
+            var layer_control_6f7eeab33841a077677a7cdc3f320bd4_layers = {
+                base_layers : {
+                    &quot;cartodbpositron&quot; : tile_layer_25ca8773b52c86886f98b9be1b486640,
+                },
+                overlays :  {
+                    &quot;Simultaneous ping lines&quot; : feature_group_c0548e8af1b52d7f322e2a2f2030aca8,
+                    &quot;Vessel A trajectory&quot; : feature_group_bc1432ec90c878c4bf5d13afaf9518d9,
+                    &quot;Vessel B trajectory&quot; : feature_group_55d285e5eafe9358651fda50ac22eb09,
+                    &quot;Vessel A \u2014 southern cluster&quot; : feature_group_496b8708fc2a565e1b8c711697904ef4,
+                    &quot;Vessel B \u2014 northern cluster&quot; : feature_group_846aec241a121fa5b849eff00930e36c,
+                },
+            };
+            let layer_control_6f7eeab33841a077677a7cdc3f320bd4 = L.control.layers(
+                layer_control_6f7eeab33841a077677a7cdc3f320bd4_layers.base_layers,
+                layer_control_6f7eeab33841a077677a7cdc3f320bd4_layers.overlays,
+                {
+  &quot;position&quot;: &quot;topright&quot;,
+  &quot;collapsed&quot;: false,
+  &quot;autoZIndex&quot;: true,
+}
+            ).addTo(map_d027d049fe270ea1a9367735e6c8e787);
+
+        
+&lt;/script&gt;
+&lt;/html&gt;" sandbox="allow-scripts allow-same-origin"></iframe>
+  </div>
+</section>
+
+
+<!-- ════════════════════════════════════════════════════
+     SLIDE 5 — D2 TELEPORTATION
+════════════════════════════════════════════════════ -->
+<section class="slide map-slide" id="s5">
+  <div class="map-bar">
+    <div class="map-bar-l">
+      <h2>🚀 Anomaly D2 — Impossible Relocation</h2>
+      <p>Cyan = last known position &nbsp;·&nbsp; Orange = reappearance &nbsp;·&nbsp; Purple line = impossible jump (30 min to 24h gap)</p>
+    </div>
+    <div style="display:flex;gap:8px">
+      <span class="mbadge mbadge-p">30 min – 24h</span>
+      <span class="mbadge mbadge-p">Speed &gt; 60 kn</span>
+    </div>
+  </div>
+  <div class="map-iframe-wrap">
+    <iframe srcdoc="&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;head&gt;
+    
+    &lt;meta http-equiv=&quot;content-type&quot; content=&quot;text/html; charset=UTF-8&quot; /&gt;
+    &lt;script src=&quot;https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js&quot;&gt;&lt;/script&gt;
+    &lt;script src=&quot;https://code.jquery.com/jquery-3.7.1.min.js&quot;&gt;&lt;/script&gt;
+    &lt;script src=&quot;https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js&quot;&gt;&lt;/script&gt;
+    &lt;script src=&quot;https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js&quot;&gt;&lt;/script&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css&quot;/&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css&quot;/&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css&quot;/&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css&quot;/&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css&quot;/&gt;
+    &lt;link rel=&quot;stylesheet&quot; href=&quot;https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css&quot;/&gt;
+    
+            &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width,
+                initial-scale=1.0, maximum-scale=1.0, user-scalable=no&quot; /&gt;
+            &lt;style&gt;
+                #map_cf0bb32be8649ba52769c7403b8b7da7 {
+                    position: relative;
+                    width: 100.0%;
+                    height: 100.0%;
+                    left: 0.0%;
+                    top: 0.0%;
+                }
+                .leaflet-container { font-size: 1rem; }
+            &lt;/style&gt;
+
+            &lt;style&gt;html, body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            &lt;/style&gt;
+
+            &lt;style&gt;#map {
+                position:absolute;
+                top:0;
+                bottom:0;
+                right:0;
+                left:0;
+                }
+            &lt;/style&gt;
+
+            &lt;script&gt;
+                L_NO_TOUCH = false;
+                L_DISABLE_3D = false;
+            &lt;/script&gt;
+
+        
+&lt;/head&gt;
+&lt;body&gt;
+    
+    
+    &lt;div style=&quot;position:fixed;bottom:30px;left:30px;z-index:1000;background:white;
+        padding:8px 14px;border:1px solid #999;border-radius:4px;
+        font:13px Arial,sans-serif;line-height:1.8;
+        box-shadow:1px 1px 4px rgba(0,0,0,0.2);&quot;&gt;
+        &lt;b&gt;D2 — Impossible Relocation&lt;/b&gt;&lt;br&gt;
+        &lt;span style=&quot;color:#17becf;&quot;&gt;&amp;#9679;&lt;/span&gt; Last known position&lt;br&gt;
+        &lt;span style=&quot;color:#ff7f0e;&quot;&gt;&amp;#9679;&lt;/span&gt; Reappearance&lt;br&gt;
+        &lt;span style=&quot;color:#9467bd;&quot;&gt;&amp;#9644;&lt;/span&gt; Jump line
+    &lt;/div&gt;
+    
+    
+            &lt;div class=&quot;folium-map&quot; id=&quot;map_cf0bb32be8649ba52769c7403b8b7da7&quot; &gt;&lt;/div&gt;
+        
+&lt;/body&gt;
+&lt;script&gt;
+    
+    
+            var map_cf0bb32be8649ba52769c7403b8b7da7 = L.map(
+                &quot;map_cf0bb32be8649ba52769c7403b8b7da7&quot;,
+                {
+                    center: [27.9491075, 9.3662685],
+                    crs: L.CRS.EPSG3857,
+                    ...{
+  &quot;zoom&quot;: 5,
+  &quot;zoomControl&quot;: true,
+  &quot;preferCanvas&quot;: false,
+}
+
+                }
+            );
+            L.control.scale().addTo(map_cf0bb32be8649ba52769c7403b8b7da7);
+
+            
+
+        
+    
+            var tile_layer_efe8638562a45141da71508c8dbbf461 = L.tileLayer(
+                &quot;https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png&quot;,
+                {
+  &quot;minZoom&quot;: 0,
+  &quot;maxZoom&quot;: 20,
+  &quot;maxNativeZoom&quot;: 20,
+  &quot;noWrap&quot;: false,
+  &quot;attribution&quot;: &quot;\u0026copy; \u003ca href=\&quot;https://www.openstreetmap.org/copyright\&quot;\u003eOpenStreetMap\u003c/a\u003e contributors \u0026copy; \u003ca href=\&quot;https://carto.com/attributions\&quot;\u003eCARTO\u003c/a\u003e&quot;,
+  &quot;subdomains&quot;: &quot;abcd&quot;,
+  &quot;detectRetina&quot;: false,
+  &quot;tms&quot;: false,
+  &quot;opacity&quot;: 1,
+}
+
+            );
+        
+    
+            tile_layer_efe8638562a45141da71508c8dbbf461.addTo(map_cf0bb32be8649ba52769c7403b8b7da7);
+        
+    
+            map_cf0bb32be8649ba52769c7403b8b7da7.fitBounds(
+                [[-5.871936249999998, 7.58673945], [61.77015125, 11.14579755]],
+                {}
+            );
+        
+    
+            var feature_group_3fbc6dd8c7fbcf29d0705d1643706e4e = L.featureGroup(
+                {
+}
+            );
+        
+    
+            var poly_line_eba7a8d7c447c440479e68bfa17d6e8d = L.polyline(
+                [[53.965295, 7.9974], [1.93292, 10.735137]],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;#9467bd&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: false, &quot;fillColor&quot;: &quot;#9467bd&quot;, &quot;fillOpacity&quot;: 0.2, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;noClip&quot;: false, &quot;opacity&quot;: 0.7, &quot;smoothFactor&quot;: 1.0, &quot;stroke&quot;: true, &quot;weight&quot;: 2}
+            ).addTo(feature_group_3fbc6dd8c7fbcf29d0705d1643706e4e);
+        
+    
+            poly_line_eba7a8d7c447c440479e68bfa17d6e8d.bindTooltip(
+                `&lt;div&gt;
+                     D2 Event 1 | MMSI 255801540 | 516.0 kn | 5791.2 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            feature_group_3fbc6dd8c7fbcf29d0705d1643706e4e.addTo(map_cf0bb32be8649ba52769c7403b8b7da7);
+        
+    
+            var feature_group_d0a6de531946ebe6d7f79428a281dffd = L.featureGroup(
+                {
+}
+            );
+        
+    
+            var circle_marker_a883a7f327dbcff49829ae91bfae9ab4 = L.circleMarker(
+                [53.965295, 7.9974],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#17becf&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_d0a6de531946ebe6d7f79428a281dffd);
+        
+    
+            circle_marker_a883a7f327dbcff49829ae91bfae9ab4.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Last known position&lt;/b&gt; | Event 1&lt;br&gt;MMSI: 255801540&lt;br&gt;(53.96529, 7.99740)&lt;br&gt;516.0 kn | 5791.2 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            feature_group_d0a6de531946ebe6d7f79428a281dffd.addTo(map_cf0bb32be8649ba52769c7403b8b7da7);
+        
+    
+            var feature_group_f24a8c055820ae0266d383f8bd5cf87a = L.featureGroup(
+                {
+}
+            );
+        
+    
+            var circle_marker_3cd551cf78156a5fa5b649b5ae61e4b1 = L.circleMarker(
+                [1.93292, 10.735137],
+                {&quot;bubblingMouseEvents&quot;: true, &quot;color&quot;: &quot;black&quot;, &quot;dashArray&quot;: null, &quot;dashOffset&quot;: null, &quot;fill&quot;: true, &quot;fillColor&quot;: &quot;#ff7f0e&quot;, &quot;fillOpacity&quot;: 0.9, &quot;fillRule&quot;: &quot;evenodd&quot;, &quot;lineCap&quot;: &quot;round&quot;, &quot;lineJoin&quot;: &quot;round&quot;, &quot;opacity&quot;: 1.0, &quot;radius&quot;: 7, &quot;stroke&quot;: true, &quot;weight&quot;: 1}
+            ).addTo(feature_group_f24a8c055820ae0266d383f8bd5cf87a);
+        
+    
+            circle_marker_3cd551cf78156a5fa5b649b5ae61e4b1.bindTooltip(
+                `&lt;div&gt;
+                     &lt;b&gt;Reappearance&lt;/b&gt; | Event 1&lt;br&gt;MMSI: 255801540&lt;br&gt;(1.93292, 10.73514)&lt;br&gt;516.0 kn | 5791.2 km
+                 &lt;/div&gt;`,
+                {
+  &quot;sticky&quot;: true,
+}
+            );
+        
+    
+            feature_group_f24a8c055820ae0266d383f8bd5cf87a.addTo(map_cf0bb32be8649ba52769c7403b8b7da7);
+        
+    
+            var layer_control_759a7e2cdedd61ae54f31ab6af8156e3_layers = {
+                base_layers : {
+                    &quot;cartodbpositron&quot; : tile_layer_efe8638562a45141da71508c8dbbf461,
+                },
+                overlays :  {
+                    &quot;Jump lines&quot; : feature_group_3fbc6dd8c7fbcf29d0705d1643706e4e,
+                    &quot;Last known positions&quot; : feature_group_d0a6de531946ebe6d7f79428a281dffd,
+                    &quot;Reappearance positions&quot; : feature_group_f24a8c055820ae0266d383f8bd5cf87a,
+                },
+            };
+            let layer_control_759a7e2cdedd61ae54f31ab6af8156e3 = L.control.layers(
+                layer_control_759a7e2cdedd61ae54f31ab6af8156e3_layers.base_layers,
+                layer_control_759a7e2cdedd61ae54f31ab6af8156e3_layers.overlays,
+                {
+  &quot;position&quot;: &quot;topright&quot;,
+  &quot;collapsed&quot;: false,
+  &quot;autoZIndex&quot;: true,
+}
+            ).addTo(map_cf0bb32be8649ba52769c7403b8b7da7);
+
+        
+&lt;/script&gt;
+&lt;/html&gt;" sandbox="allow-scripts allow-same-origin"></iframe>
+  </div>
+</section>
+
+</div><!-- /deck -->
+
+<script>
+/* ── Canvas particle network ─────────────────────────── */
+function initCanvas(id) {
+  const canvas = document.getElementById(id);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let W, H, pts;
+
+  function resize() {
+    W = canvas.width  = canvas.offsetWidth;
+    H = canvas.height = canvas.offsetHeight;
+    pts = Array.from({length: 55}, () => ({
+      x: Math.random() * W, y: Math.random() * H,
+      vx: (Math.random() - .5) * .4, vy: (Math.random() - .5) * .4,
+      r: Math.random() * 1.5 + .5
+    }));
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    pts.forEach(p => {
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0 || p.x > W) p.vx *= -1;
+      if (p.y < 0 || p.y > H) p.vy *= -1;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(180,50,40,.35)';
+      ctx.fill();
+    });
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        const dx = pts[i].x - pts[j].x, dy = pts[i].y - pts[j].y;
+        const d = Math.sqrt(dx*dx + dy*dy);
+        if (d < 130) {
+          ctx.beginPath();
+          ctx.moveTo(pts[i].x, pts[i].y);
+          ctx.lineTo(pts[j].x, pts[j].y);
+          ctx.strokeStyle = `rgba(180,50,40,${(1 - d/130) * .12})`;
+          ctx.lineWidth = .8;
+          ctx.stroke();
+        }
+      }
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+}
+initCanvas('c1');
+initCanvas('c2');
+
+/* ── Dot nav ─────────────────────────────────────────── */
+const deck  = document.getElementById('deck');
+const dots  = document.querySelectorAll('.dots a');
+const slides = document.querySelectorAll('.slide');
+
+const io = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      dots.forEach(d => d.classList.remove('on'));
+      const i = [...slides].indexOf(e.target);
+      if (dots[i]) dots[i].classList.add('on');
+    }
+  });
+}, { root: deck, threshold: .5 });
+slides.forEach(s => io.observe(s));
+
+dots.forEach(d => d.addEventListener('click', e => {
+  e.preventDefault();
+  const t = document.querySelector(d.getAttribute('href'));
+  deck.scrollTo({ top: t.offsetTop, behavior: 'smooth' });
+}));
+
+/* ── Pipeline detail overlay ─────────────────────────── */
+const DETAILS = {
+  reader: {
+    file: 'src/streaming/reader.py',
+    title: 'Streaming Layer — How data enters the pipeline',
+    points: [
+      'Opens each CSV file and reads the header row exactly once',
+      'build_raw_row_column_indices() maps column names to indices for O(1) access',
+      'stream_raw_rows() is a generator — yields one row at a time, never buffers the file',
+      'Extracts only 7 fields from ~50 columns: timestamp, MMSI, lat, lon, SOG, draught, vessel class',
+      'stream_raw_rows_from_files() chains both input CSVs using yield from — two files appear as one feed',
+      'stream_csv_files_in_chunks() accumulates N rows into a list and assigns a global chunk_id',
+      'chunk_id is critical — used later by merge.py to reassemble results in the correct order',
+      'Memory footprint: only one chunk lives in RAM at any time regardless of file size',
+    ]
+  },
+  parser: {
+    file: 'src/streaming/parser.py',
+    title: 'Cleaning Layer — Filter chain validation',
+    points: [
+      'Runs inside each worker process, initialized once per worker via worker_init()',
+      'AISRowParser.parse_row() applies filters from cheapest to most expensive',
+      'Filter 1 — Vessel class: keep only Class A (commercial vessels); drops buoys, aircraft, coast stations',
+      'Filter 2 — Timestamp: must be parseable as UTC datetime; malformed strings dropped',
+      'Filter 3 — MMSI: must be exactly 9 digits; rejects placeholders like 000000000 or 111111111',
+      'Filter 4 — Coordinates: lat in [-90,90], lon in [-180,180]; rejects exact (0,0) placeholder',
+      'Filter 5 — SOG & draught: parsed as float if present; missing values allowed (not required)',
+      'Row dropped on first failure — invalid rows never reach anomaly detection logic',
+    ]
+  },
+  worker: {
+    file: 'src/parallel/worker_pool.py',
+    title: 'Parallel Workers — Anomaly detection per chunk',
+    points: [
+      'Uses multiprocessing.Pool.imap_unordered — chunks dispatched to workers as they arrive',
+      'Worker processes initialized once via worker_init() — PORT_ZONES and ROW_PARSER loaded as globals',
+      'process_chunk() receives a raw chunk, parses rows, groups by MMSI, sorts each vessel by timestamp',
+      '_downsample_records() reduces to 5-minute intervals for anomalies A & C (reduces noise)',
+      'Full-resolution records used for anomaly D — downsampling would hide teleportation signals',
+      'Runs detect_going_dark(), detect_draft_change(), detect_teleportation() on every consecutive pair',
+      'Teleportation classified: gap <= 30min → D1 (cloning); 30min-24h → D2 (impossible relocation)',
+      'Saves boundary records (first + last ping per vessel per chunk) for cross-chunk analysis in merge.py',
+    ]
+  },
+  merge: {
+    file: 'src/anomaly_detection/merge.py',
+    title: 'Merge Layer — Cross-chunk boundary stitching',
+    points: [
+      'Workers return results out of order — merge layer uses a pending buffer keyed by chunk_id',
+      'Results processed strictly in chunk_id order using next_chunk_id_to_merge counter',
+      'BoundaryState stores last_record and last_sampled_record per MMSI from the previous chunk',
+      'For each new chunk, compares boundary: last record of chunk N vs first record of chunk N+1',
+      'This catches anomalies that span a chunk boundary — no single worker ever sees both sides',
+      'A & C boundary checks use sampled records (5-min intervals); D uses full-resolution records',
+      'D1 and D2 boundary events tracked in separate lists on VesselGlobalSummary',
+      'Anomaly B (loitering) runs post-merge on globally aggregated sampled records — needs global view',
+    ]
+  },
+  scoring: {
+    file: 'scripts/run_detection.py',
+    title: 'Scoring & Output — DFSI ranking and CSV export',
+    points: [
+      'Collects VesselGlobalSummary objects from all chunks after merge completes',
+      'DFSI = max_gap_hours/2 + total_D2_jump_nm/10 + draft_change_count×15',
+      'Only D2 contributes to DFSI — D1 (identity cloning) tracked separately',
+      'All vessels sorted by DFSI descending — highest score = most suspicious',
+      'Writes dfsi_results.csv with full anomaly breakdown per vessel',
+      'Extracts top vessel coordinates for each anomaly type into map CSVs',
+      'MemoryMonitor background thread samples RAM every second → memory_profile.csv',
+      'Supports --enable-loitering-detection flag to include anomaly B processing',
+    ]
+  }
+};
+
+function openDetail(key) {
+  const d = DETAILS[key];
+  document.getElementById('dmFile').textContent  = d.file;
+  document.getElementById('dmTitle').textContent = d.title;
+  document.getElementById('dmGrid').innerHTML = d.points
+    .map(p => `<div class="dm-item">${p}</div>`).join('');
+  document.getElementById('detailOverlay').classList.add('show');
+  document.querySelectorAll('.pnode').forEach(n => n.classList.remove('lit'));
+  document.querySelector(`[data-key="${key}"]`).classList.add('lit');
+}
+function closeDetail() {
+  document.getElementById('detailOverlay').classList.remove('show');
+  document.querySelectorAll('.pnode').forEach(n => n.classList.remove('lit'));
+}
+document.getElementById('detailOverlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeDetail();
+});
+document.querySelectorAll('.pnode').forEach(n => {
+  n.addEventListener('click', () => openDetail(n.dataset.key));
+});
+</script>
+</body>
+</html>

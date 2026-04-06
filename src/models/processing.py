@@ -6,8 +6,8 @@ from src.models.ais import AISRecord
 from src.models.events import (
     DraftChangeEvent,
     GoingDarkEvent,
+    LoiteringTransferEvent,
     TeleportationEvent,
-    LoiteringTransferEvent
 )
 
 
@@ -20,23 +20,14 @@ class VesselChunkSummary:
     chunk. The summary contains:
     - boundary records needed for cross-chunk comparisons;
     - local aggregate values used later for DFSI calculation;
-    - locally detected anomaly events found fully inside the chunk.
+    - locally detected anomaly events found fully inside the chunk;
+    - sampling streams for anomaly A/C and anomaly B.
 
-    Attributes:
-        mmsi: Vessel MMSI identifier.
-        record_count: Number of valid AIS records for this MMSI in the chunk.
-        first_record: First record for this MMSI in the chunk by timestamp.
-        last_record: Last record for this MMSI in the chunk by timestamp.
-        max_gap_hours: Maximum AIS gap detected inside this chunk for this MMSI.
-        total_impossible_jump_km: Sum of D2 impossible-relocation distances.
-        draft_change_count: Number of anomaly C events detected in the chunk.
-        going_dark_events: Local anomaly A events detected inside the chunk.
-        draft_change_events: Local anomaly C events detected inside the chunk.
-        teleportation_events: All local anomaly D events detected inside the chunk.
-        teleportation_d1_events: Local D1 near-simultaneous cloning events.
-        teleportation_d2_events: Local D2 impossible-relocation events.
-        ac_sampled_records: Time discretization used for anomalies A and C.
-        loitering_sampled_records: Time discretization used for anomaly B.
+    Sampling note:
+    the worker now uses globally anchored time buckets rather than a pure
+    "gap from last kept point" rule. This makes the discretization stable
+    across chunk boundaries when the main process deduplicates repeated
+    bucket representatives.
     """
 
     mmsi: int

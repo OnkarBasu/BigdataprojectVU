@@ -8,7 +8,14 @@ from src.anomaly_detection.merge import (
     merge_chunk_result_into_state,
     merge_chunk_results,
 )
-from src.config import DetectionConfig, DraftChangeConfig, GoingDarkConfig, TeleportationConfig
+from src.config import (
+    DetectionConfig,
+    DraftChangeConfig,
+    GoingDarkConfig,
+    LoiteringConfig,
+    SamplingConfig,
+    TeleportationConfig,
+)
 from src.models import AISRecord, ChunkProcessingResult, VesselChunkSummary
 from src.utils.ports import PortZone
 
@@ -36,7 +43,8 @@ def make_summary(
     *,
     mmsi: int,
     records: list[AISRecord],
-    sampled_records: list[AISRecord] | None = None,
+    ac_sampled_records: list[AISRecord] | None = None,
+    loitering_sampled_records: list[AISRecord] | None = None,
 ) -> VesselChunkSummary:
     ordered = sorted(records, key=lambda r: r.timestamp)
     return VesselChunkSummary(
@@ -44,7 +52,10 @@ def make_summary(
         record_count=len(ordered),
         first_record=ordered[0],
         last_record=ordered[-1],
-        sampled_records=ordered if sampled_records is None else sampled_records,
+        ac_sampled_records=ordered if ac_sampled_records is None else ac_sampled_records,
+        loitering_sampled_records=(
+            ordered if loitering_sampled_records is None else loitering_sampled_records
+        ),
     )
 
 
@@ -83,6 +94,8 @@ def make_test_detection_config() -> DetectionConfig:
             d2_port_proximity_km=15.0,
             minimum_port_radius_km=0.0,
         ),
+        loitering=LoiteringConfig(),
+        sampling=SamplingConfig(ac_sampling_seconds=5 * 60, loitering_sampling_seconds=5 * 60),
     )
 
 
@@ -96,18 +109,8 @@ def test_merge_chunk_results_accumulates_record_counts_for_same_vessel() -> None
             mmsi: make_summary(
                 mmsi=mmsi,
                 records=[
-                    make_record(
-                        mmsi=mmsi,
-                        timestamp=base_time,
-                        latitude=10.0,
-                        longitude=20.0,
-                    ),
-                    make_record(
-                        mmsi=mmsi,
-                        timestamp=base_time + timedelta(minutes=5),
-                        latitude=10.01,
-                        longitude=20.0,
-                    ),
+                    make_record(mmsi=mmsi, timestamp=base_time, latitude=10.0, longitude=20.0),
+                    make_record(mmsi=mmsi, timestamp=base_time + timedelta(minutes=5), latitude=10.01, longitude=20.0),
                 ],
             ),
         },
@@ -119,12 +122,7 @@ def test_merge_chunk_results_accumulates_record_counts_for_same_vessel() -> None
             mmsi: make_summary(
                 mmsi=mmsi,
                 records=[
-                    make_record(
-                        mmsi=mmsi,
-                        timestamp=base_time + timedelta(minutes=10),
-                        latitude=10.02,
-                        longitude=20.0,
-                    ),
+                    make_record(mmsi=mmsi, timestamp=base_time + timedelta(minutes=10), latitude=10.02, longitude=20.0),
                 ],
             ),
         },
@@ -146,12 +144,7 @@ def test_merge_chunk_results_merges_results_in_chunk_id_order() -> None:
             mmsi: make_summary(
                 mmsi=mmsi,
                 records=[
-                    make_record(
-                        mmsi=mmsi,
-                        timestamp=base_time + timedelta(minutes=10),
-                        latitude=10.02,
-                        longitude=20.0,
-                    ),
+                    make_record(mmsi=mmsi, timestamp=base_time + timedelta(minutes=10), latitude=10.02, longitude=20.0),
                 ],
             ),
         },
@@ -163,12 +156,7 @@ def test_merge_chunk_results_merges_results_in_chunk_id_order() -> None:
             mmsi: make_summary(
                 mmsi=mmsi,
                 records=[
-                    make_record(
-                        mmsi=mmsi,
-                        timestamp=base_time,
-                        latitude=10.0,
-                        longitude=20.0,
-                    ),
+                    make_record(mmsi=mmsi, timestamp=base_time, latitude=10.0, longitude=20.0),
                 ],
             ),
         },
@@ -184,44 +172,19 @@ def test_merge_detects_going_dark_across_chunk_boundary() -> None:
     mmsi = 245014000
     base_time = datetime(2025, 9, 1, 0, 0, 0)
 
-    chunk_1_record = make_record(
-        mmsi=mmsi,
-        timestamp=base_time,
-        latitude=10.0,
-        longitude=20.0,
-    )
-    chunk_2_record = make_record(
-        mmsi=mmsi,
-        timestamp=base_time + timedelta(hours=5),
-        latitude=10.02,
-        longitude=20.0,
-    )
+    chunk_1_record = make_record(mmsi=mmsi, timestamp=base_time, latitude=10.0, longitude=20.0)
+    chunk_2_record = make_record(mmsi=mmsi, timestamp=base_time + timedelta(hours=5), latitude=10.02, longitude=20.0)
 
     chunk_1 = make_chunk_result(
         chunk_id=1,
-        vessel_summaries={
-            mmsi: make_summary(
-                mmsi=mmsi,
-                records=[chunk_1_record],
-                sampled_records=[chunk_1_record],
-            ),
-        },
+        vessel_summaries={mmsi: make_summary(mmsi=mmsi, records=[chunk_1_record], ac_sampled_records=[chunk_1_record])},
     )
     chunk_2 = make_chunk_result(
         chunk_id=2,
-        vessel_summaries={
-            mmsi: make_summary(
-                mmsi=mmsi,
-                records=[chunk_2_record],
-                sampled_records=[chunk_2_record],
-            ),
-        },
+        vessel_summaries={mmsi: make_summary(mmsi=mmsi, records=[chunk_2_record], ac_sampled_records=[chunk_2_record])},
     )
 
-    merged = merge_chunk_results(
-        [chunk_1, chunk_2],
-        detection_config=config,
-    )
+    merged = merge_chunk_results([chunk_1, chunk_2], detection_config=config)
 
     summary = merged[mmsi]
     assert len(summary.going_dark_events) == 1
@@ -233,56 +196,22 @@ def test_merge_detects_draft_change_across_chunk_boundary() -> None:
     mmsi = 245014000
     base_time = datetime(2025, 9, 1, 0, 0, 0)
     port_zones = (
-        PortZone(
-            name="Far Port",
-            country="Test",
-            latitude=0.0,
-            longitude=0.0,
-            radius_km=5.0,
-        ),
+        PortZone(name="Far Port", country="Test", latitude=0.0, longitude=0.0, radius_km=5.0),
     )
 
-    chunk_1_record = make_record(
-        mmsi=mmsi,
-        timestamp=base_time,
-        latitude=20.0,
-        longitude=30.0,
-        draught=10.0,
-    )
-    chunk_2_record = make_record(
-        mmsi=mmsi,
-        timestamp=base_time + timedelta(hours=3),
-        latitude=20.02,
-        longitude=30.0,
-        draught=11.0,
-    )
+    chunk_1_record = make_record(mmsi=mmsi, timestamp=base_time, latitude=20.0, longitude=30.0, draught=10.0)
+    chunk_2_record = make_record(mmsi=mmsi, timestamp=base_time + timedelta(hours=3), latitude=20.02, longitude=30.0, draught=11.0)
 
     chunk_1 = make_chunk_result(
         chunk_id=1,
-        vessel_summaries={
-            mmsi: make_summary(
-                mmsi=mmsi,
-                records=[chunk_1_record],
-                sampled_records=[chunk_1_record],
-            ),
-        },
+        vessel_summaries={mmsi: make_summary(mmsi=mmsi, records=[chunk_1_record], ac_sampled_records=[chunk_1_record])},
     )
     chunk_2 = make_chunk_result(
         chunk_id=2,
-        vessel_summaries={
-            mmsi: make_summary(
-                mmsi=mmsi,
-                records=[chunk_2_record],
-                sampled_records=[chunk_2_record],
-            ),
-        },
+        vessel_summaries={mmsi: make_summary(mmsi=mmsi, records=[chunk_2_record], ac_sampled_records=[chunk_2_record])},
     )
 
-    merged = merge_chunk_results(
-        [chunk_1, chunk_2],
-        port_zones=port_zones,
-        detection_config=config,
-    )
+    merged = merge_chunk_results([chunk_1, chunk_2], port_zones=port_zones, detection_config=config)
 
     summary = merged[mmsi]
     assert len(summary.draft_change_events) == 1
@@ -294,44 +223,19 @@ def test_merge_detects_d1_teleportation_across_chunk_boundary() -> None:
     mmsi = 245014000
     base_time = datetime(2025, 9, 1, 0, 0, 0)
 
-    chunk_1_record = make_record(
-        mmsi=mmsi,
-        timestamp=base_time,
-        latitude=10.0,
-        longitude=20.0,
-    )
-    chunk_2_record = make_record(
-        mmsi=mmsi,
-        timestamp=base_time + timedelta(minutes=20),
-        latitude=12.0,
-        longitude=20.0,
-    )
+    chunk_1_record = make_record(mmsi=mmsi, timestamp=base_time, latitude=10.0, longitude=20.0)
+    chunk_2_record = make_record(mmsi=mmsi, timestamp=base_time + timedelta(minutes=20), latitude=12.0, longitude=20.0)
 
     chunk_1 = make_chunk_result(
         chunk_id=1,
-        vessel_summaries={
-            mmsi: make_summary(
-                mmsi=mmsi,
-                records=[chunk_1_record],
-                sampled_records=[chunk_1_record],
-            ),
-        },
+        vessel_summaries={mmsi: make_summary(mmsi=mmsi, records=[chunk_1_record], ac_sampled_records=[chunk_1_record])},
     )
     chunk_2 = make_chunk_result(
         chunk_id=2,
-        vessel_summaries={
-            mmsi: make_summary(
-                mmsi=mmsi,
-                records=[chunk_2_record],
-                sampled_records=[chunk_2_record],
-            ),
-        },
+        vessel_summaries={mmsi: make_summary(mmsi=mmsi, records=[chunk_2_record], ac_sampled_records=[chunk_2_record])},
     )
 
-    merged = merge_chunk_results(
-        [chunk_1, chunk_2],
-        detection_config=config,
-    )
+    merged = merge_chunk_results([chunk_1, chunk_2], detection_config=config)
 
     summary = merged[mmsi]
     assert len(summary.teleportation_events) == 1
@@ -340,64 +244,29 @@ def test_merge_detects_d1_teleportation_across_chunk_boundary() -> None:
     assert summary.teleportation_events[0].subtype == "D1"
 
 
-def test_merge_detects_d2_teleportation_and_updates_total_impossible_jump_km(
-    monkeypatch,
-) -> None:
-    def fake_classify_d2_quality(
-        previous,
-        current,
-        port_zones,
-        teleportation_config,
-    ):
+def test_merge_detects_d2_teleportation_and_updates_total_impossible_jump_km(monkeypatch) -> None:
+    def fake_classify_d2_quality(previous, current, port_zones, teleportation_config):
         return False, False, "ok", True
 
-    monkeypatch.setattr(
-        "src.anomaly_detection.rules._classify_d2_quality",
-        fake_classify_d2_quality,
-    )
+    monkeypatch.setattr("src.anomaly_detection.rules._classify_d2_quality", fake_classify_d2_quality)
 
     config = make_test_detection_config()
     mmsi = 245014000
     base_time = datetime(2025, 9, 1, 0, 0, 0)
 
-    chunk_1_record = make_record(
-        mmsi=mmsi,
-        timestamp=base_time,
-        latitude=10.0,
-        longitude=20.0,
-    )
-    chunk_2_record = make_record(
-        mmsi=mmsi,
-        timestamp=base_time + timedelta(hours=2),
-        latitude=12.0,
-        longitude=20.0,
-    )
+    chunk_1_record = make_record(mmsi=mmsi, timestamp=base_time, latitude=10.0, longitude=20.0)
+    chunk_2_record = make_record(mmsi=mmsi, timestamp=base_time + timedelta(hours=2), latitude=12.0, longitude=20.0)
 
     chunk_1 = make_chunk_result(
         chunk_id=1,
-        vessel_summaries={
-            mmsi: make_summary(
-                mmsi=mmsi,
-                records=[chunk_1_record],
-                sampled_records=[chunk_1_record],
-            ),
-        },
+        vessel_summaries={mmsi: make_summary(mmsi=mmsi, records=[chunk_1_record], ac_sampled_records=[chunk_1_record])},
     )
     chunk_2 = make_chunk_result(
         chunk_id=2,
-        vessel_summaries={
-            mmsi: make_summary(
-                mmsi=mmsi,
-                records=[chunk_2_record],
-                sampled_records=[chunk_2_record],
-            ),
-        },
+        vessel_summaries={mmsi: make_summary(mmsi=mmsi, records=[chunk_2_record], ac_sampled_records=[chunk_2_record])},
     )
 
-    merged = merge_chunk_results(
-        [chunk_1, chunk_2],
-        detection_config=config,
-    )
+    merged = merge_chunk_results([chunk_1, chunk_2], detection_config=config)
 
     summary = merged[mmsi]
     assert len(summary.teleportation_events) == 1
@@ -413,39 +282,17 @@ def test_merge_does_not_duplicate_boundary_anomaly_when_chunk_ids_are_not_increa
     mmsi = 245014000
     base_time = datetime(2025, 9, 1, 0, 0, 0)
 
-    record_a = make_record(
-        mmsi=mmsi,
-        timestamp=base_time,
-        latitude=10.0,
-        longitude=20.0,
-    )
-    record_b = make_record(
-        mmsi=mmsi,
-        timestamp=base_time + timedelta(hours=5),
-        latitude=10.02,
-        longitude=20.0,
-    )
+    record_a = make_record(mmsi=mmsi, timestamp=base_time, latitude=10.0, longitude=20.0)
+    record_b = make_record(mmsi=mmsi, timestamp=base_time + timedelta(hours=5), latitude=10.02, longitude=20.0)
 
     chunk = make_chunk_result(
         chunk_id=1,
-        vessel_summaries={
-            mmsi: make_summary(
-                mmsi=mmsi,
-                records=[record_a],
-                sampled_records=[record_a],
-            ),
-        },
+        vessel_summaries={mmsi: make_summary(mmsi=mmsi, records=[record_a], ac_sampled_records=[record_a])},
     )
 
     later_chunk_same_id = make_chunk_result(
         chunk_id=1,
-        vessel_summaries={
-            mmsi: make_summary(
-                mmsi=mmsi,
-                records=[record_b],
-                sampled_records=[record_b],
-            ),
-        },
+        vessel_summaries={mmsi: make_summary(mmsi=mmsi, records=[record_b], ac_sampled_records=[record_b])},
     )
 
     merge_state = create_merge_state(detection_config=config)

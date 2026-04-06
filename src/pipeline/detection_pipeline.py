@@ -26,25 +26,36 @@ from src.streaming import stream_csv_files_in_chunks
 from src.utils import load_port_zones
 
 
+COLUMNS_CONSOLE_OUTPUT = {
+    "Chunk ID": 8,
+    "Work s": 9,
+    "QWait s": 9,
+    "Merge s": 9,
+    "Raw": 8,
+    "Valid": 8,
+    "Total": 10,
+    "AC Samp": 8,
+    "B Samp": 8,
+    "Pend": 6,
+    "Done": 6,
+    "Main RSS MB": 9,
+}
+
+
 @dataclass(slots=True, frozen=True)
 class ChunkMergeProfile:
     chunk_id: int
     raw_row_count: int
     valid_record_count: int
     vessel_count: int
-    sampled_record_count: int
+    ac_sampled_record_count: int
+    loitering_sampled_record_count: int
     worker_elapsed_sec: float
     queue_wait_sec: float
     merge_elapsed_sec: float
     pending_results_before_merge: int
     pending_results_after_merge: int
     main_rss_mb_after_merge: float
-    loitering_bucket_count_before: int
-    loitering_bucket_count_after: int
-    loitering_active_pairs_before: int
-    loitering_active_pairs_after: int
-    loitering_finished_events_before: int
-    loitering_finished_events_after: int
 
 
 @dataclass(slots=True, frozen=True)
@@ -90,13 +101,6 @@ def _build_loitering_state_snapshot(merge_state) -> tuple[int, int, int]:
     )
 
 
-def _count_sampled_records(chunk_result: ChunkProcessingResult) -> int:
-    return sum(
-        len(summary.ac_sampled_records)
-        for summary in chunk_result.vessel_summaries.values()
-    )
-
-
 def _save_pipeline_profile_csv(
     profile_output_file: Path,
     chunk_profiles: list[ChunkMergeProfile],
@@ -108,19 +112,14 @@ def _save_pipeline_profile_csv(
         "raw_row_count",
         "valid_record_count",
         "vessel_count",
-        "sampled_record_count",
+        "ac_sampled_record_count",
+        "loitering_sampled_record_count",
         "worker_elapsed_sec",
         "queue_wait_sec",
         "merge_elapsed_sec",
         "pending_results_before_merge",
         "pending_results_after_merge",
         "main_rss_mb_after_merge",
-        "loitering_bucket_count_before",
-        "loitering_bucket_count_after",
-        "loitering_active_pairs_before",
-        "loitering_active_pairs_after",
-        "loitering_finished_events_before",
-        "loitering_finished_events_after",
     ]
 
     with profile_output_file.open("w", encoding="utf-8", newline="") as handle:
@@ -165,44 +164,60 @@ def merge_ready_results(
         loitering_after = _build_loitering_state_snapshot(merge_state)
         main_rss_mb_after_merge = get_rss_mb(process)
 
+        ac_sampled_record_count = sum(
+            len(summary.ac_sampled_records)
+            for summary in chunk_result.vessel_summaries.values()
+        )
+
+        loitering_sampled_record_count = sum(
+            len(summary.loitering_sampled_records)
+            for summary in chunk_result.vessel_summaries.values()
+        )
+
         chunk_profiles.append(
             ChunkMergeProfile(
                 chunk_id=chunk_result.chunk_id,
-                raw_row_count=chunk_result.raw_row_count,
-                valid_record_count=chunk_result.valid_record_count,
                 vessel_count=len(chunk_result.vessel_summaries),
-                sampled_record_count=_count_sampled_records(chunk_result),
                 worker_elapsed_sec=chunk_result.elapsed_time,
                 queue_wait_sec=queue_wait_sec,
                 merge_elapsed_sec=merge_elapsed_sec,
+                raw_row_count=chunk_result.raw_row_count,
+                valid_record_count=chunk_result.valid_record_count,
+                ac_sampled_record_count=ac_sampled_record_count,
+                loitering_sampled_record_count=loitering_sampled_record_count,
                 pending_results_before_merge=pending_count_before_merge,
                 pending_results_after_merge=len(pending_results),
                 main_rss_mb_after_merge=main_rss_mb_after_merge,
-                loitering_bucket_count_before=loitering_before[0],
-                loitering_bucket_count_after=loitering_after[0],
-                loitering_active_pairs_before=loitering_before[1],
-                loitering_active_pairs_after=loitering_after[1],
-                loitering_finished_events_before=loitering_before[2],
-                loitering_finished_events_after=loitering_after[2],
             )
         )
 
         processed_valid_records += chunk_result.valid_record_count
         completed_chunks += 1
 
+        header_str = " | ".join(f"{name:<{width}}" for name, width in COLUMNS_CONSOLE_OUTPUT.items())
+        separator = "-" * len(header_str)
+
         if verbose:
+            if (completed_chunks - 1) % 5 == 0:
+                print(f"{separator}")
+                print(header_str)
+                print(separator)
+
+            profile = chunk_profiles[-1]
+
             print(
-                f"Chunk {chunk_result.chunk_id} | "
-                f"worker={chunk_result.elapsed_time:.4f} sec | "
-                f"queue_wait={queue_wait_sec:.4f} sec | "
-                f"merge={merge_elapsed_sec:.4f} sec | "
-                f"Raw rows={chunk_result.raw_row_count} | "
-                f"Valid records={chunk_result.valid_record_count} | "
-                f"Processed valid records: {processed_valid_records} | "
-                f"Sampled records={chunk_profiles[-1].sampled_record_count} | "
-                f"Pending before merge={pending_count_before_merge} | "
-                f"Completed chunks={completed_chunks} | "
-                f"Main RSS={main_rss_mb_after_merge:.2f} MB"
+                f"{chunk_result.chunk_id:<{COLUMNS_CONSOLE_OUTPUT['Chunk ID']}} | "
+                f"{chunk_result.elapsed_time:<{COLUMNS_CONSOLE_OUTPUT['Work s']}.4f} | "
+                f"{queue_wait_sec:<{COLUMNS_CONSOLE_OUTPUT['QWait s']}.4f} | "
+                f"{merge_elapsed_sec:<{COLUMNS_CONSOLE_OUTPUT['Merge s']}.4f} | "
+                f"{chunk_result.raw_row_count:<{COLUMNS_CONSOLE_OUTPUT['Raw']}} | "
+                f"{chunk_result.valid_record_count:<{COLUMNS_CONSOLE_OUTPUT['Valid']}} | "
+                f"{processed_valid_records:<{COLUMNS_CONSOLE_OUTPUT['Total']}} | "
+                f"{profile.ac_sampled_record_count:<{COLUMNS_CONSOLE_OUTPUT['AC Samp']}} | "
+                f"{profile.loitering_sampled_record_count:<{COLUMNS_CONSOLE_OUTPUT['B Samp']}} | "
+                f"{pending_count_before_merge:<{COLUMNS_CONSOLE_OUTPUT['Pend']}} | "
+                f"{completed_chunks:<{COLUMNS_CONSOLE_OUTPUT['Done']}} | "
+                f"{main_rss_mb_after_merge:<{COLUMNS_CONSOLE_OUTPUT['Main RSS MB']}.2f}"
             )
 
         next_chunk_id_to_merge += 1

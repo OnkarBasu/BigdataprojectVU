@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import time
 from dataclasses import dataclass
 from multiprocessing import Pool
@@ -26,6 +27,41 @@ from src.utils import load_port_zones
 
 
 @dataclass(slots=True, frozen=True)
+class ChunkMergeProfile:
+    chunk_id: int
+    raw_row_count: int
+    valid_record_count: int
+    vessel_count: int
+    sampled_record_count: int
+    worker_elapsed_sec: float
+    queue_wait_sec: float
+    merge_elapsed_sec: float
+    pending_results_before_merge: int
+    pending_results_after_merge: int
+    main_rss_mb_after_merge: float
+    loitering_bucket_count_before: int
+    loitering_bucket_count_after: int
+    loitering_active_pairs_before: int
+    loitering_active_pairs_after: int
+    loitering_finished_events_before: int
+    loitering_finished_events_after: int
+
+
+@dataclass(slots=True, frozen=True)
+class DetectionPipelineProfile:
+    chunk_profiles: list[ChunkMergeProfile]
+    total_worker_elapsed_sec: float
+    total_queue_wait_sec: float
+    total_merge_elapsed_sec: float
+    max_queue_wait_sec: float
+    max_merge_elapsed_sec: float
+    max_pending_results: int
+    finalize_loitering_elapsed_sec: float
+    dfsi_elapsed_sec: float
+    profile_output_file: Path
+
+
+@dataclass(slots=True, frozen=True)
 class DetectionPipelineResult:
     global_summaries: dict
     dfsi_scores: dict[int, float]
@@ -39,23 +75,85 @@ class DetectionPipelineResult:
     worker_memory_output_file: Path
     memory_summary_output_file: Path
     memory_summary: MemorySummary
+    pipeline_profile: DetectionPipelineProfile
+
+
+def _build_loitering_state_snapshot(merge_state) -> tuple[int, int, int]:
+    loitering_state = merge_state.loitering_state
+    if loitering_state is None:
+        return 0, 0, 0
+
+    return (
+        len(loitering_state.pending_bucket_points),
+        len(loitering_state.active_pairs),
+        len(loitering_state.finished_events),
+    )
+
+
+def _count_sampled_records(chunk_result: ChunkProcessingResult) -> int:
+    return sum(
+        len(summary.sampled_records)
+        for summary in chunk_result.vessel_summaries.values()
+    )
+
+
+def _save_pipeline_profile_csv(
+    profile_output_file: Path,
+    chunk_profiles: list[ChunkMergeProfile],
+) -> None:
+    profile_output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    fieldnames = [
+        "chunk_id",
+        "raw_row_count",
+        "valid_record_count",
+        "vessel_count",
+        "sampled_record_count",
+        "worker_elapsed_sec",
+        "queue_wait_sec",
+        "merge_elapsed_sec",
+        "pending_results_before_merge",
+        "pending_results_after_merge",
+        "main_rss_mb_after_merge",
+        "loitering_bucket_count_before",
+        "loitering_bucket_count_after",
+        "loitering_active_pairs_before",
+        "loitering_active_pairs_after",
+        "loitering_finished_events_before",
+        "loitering_finished_events_after",
+    ]
+
+    with profile_output_file.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for profile in chunk_profiles:
+            writer.writerow({name: getattr(profile, name) for name in fieldnames})
 
 
 def merge_ready_results(
-    pending_results: dict[int, ChunkProcessingResult],
+    pending_results: dict[int, tuple[ChunkProcessingResult, float]],
     next_chunk_id_to_merge: int,
     merge_state,
     port_zones,
     processed_valid_records: int,
     completed_chunks: int,
     process,
+    chunk_profiles: list[ChunkMergeProfile],
+    max_pending_results_seen: int,
     verbose: bool = True,
-) -> tuple[int, int, int]:
+) -> tuple[int, int, int, int]:
     """
     Merge all consecutively available chunk results in strict chunk order.
     """
     while next_chunk_id_to_merge in pending_results:
-        chunk_result = pending_results.pop(next_chunk_id_to_merge)
+        pending_count_before_merge = len(pending_results)
+        max_pending_results_seen = max(max_pending_results_seen, pending_count_before_merge)
+
+        chunk_result, received_at = pending_results.pop(next_chunk_id_to_merge)
+        merge_started_at = time.perf_counter()
+        queue_wait_sec = merge_started_at - received_at
+
+        loitering_before = _build_loitering_state_snapshot(merge_state)
 
         merge_chunk_result_into_state(
             merge_state=merge_state,
@@ -63,23 +161,58 @@ def merge_ready_results(
             port_zones=port_zones,
         )
 
+        merge_elapsed_sec = time.perf_counter() - merge_started_at
+        loitering_after = _build_loitering_state_snapshot(merge_state)
+        main_rss_mb_after_merge = get_rss_mb(process)
+
+        chunk_profiles.append(
+            ChunkMergeProfile(
+                chunk_id=chunk_result.chunk_id,
+                raw_row_count=chunk_result.raw_row_count,
+                valid_record_count=chunk_result.valid_record_count,
+                vessel_count=len(chunk_result.vessel_summaries),
+                sampled_record_count=_count_sampled_records(chunk_result),
+                worker_elapsed_sec=chunk_result.elapsed_time,
+                queue_wait_sec=queue_wait_sec,
+                merge_elapsed_sec=merge_elapsed_sec,
+                pending_results_before_merge=pending_count_before_merge,
+                pending_results_after_merge=len(pending_results),
+                main_rss_mb_after_merge=main_rss_mb_after_merge,
+                loitering_bucket_count_before=loitering_before[0],
+                loitering_bucket_count_after=loitering_after[0],
+                loitering_active_pairs_before=loitering_before[1],
+                loitering_active_pairs_after=loitering_after[1],
+                loitering_finished_events_before=loitering_before[2],
+                loitering_finished_events_after=loitering_after[2],
+            )
+        )
+
         processed_valid_records += chunk_result.valid_record_count
         completed_chunks += 1
 
         if verbose:
             print(
-                f"Chunk {chunk_result.chunk_id} processed in "
-                f"{chunk_result.elapsed_time:.4f} sec | "
-                f"Raw rows in chunk: {chunk_result.raw_row_count} | "
-                f"Valid records in chunk: {chunk_result.valid_record_count} | "
+                f"Chunk {chunk_result.chunk_id} | "
+                f"worker={chunk_result.elapsed_time:.4f} sec | "
+                f"queue_wait={queue_wait_sec:.4f} sec | "
+                f"merge={merge_elapsed_sec:.4f} sec | "
+                f"Raw rows={chunk_result.raw_row_count} | "
+                f"Valid records={chunk_result.valid_record_count} | "
+                f"Sampled records={chunk_profiles[-1].sampled_record_count} | "
                 f"Processed valid records: {processed_valid_records} | "
-                f"Completed chunks: {completed_chunks} | "
-                f"Main RSS: {get_rss_mb(process):.2f} MB"
+                f"Pending before merge={pending_count_before_merge} | "
+                f"Completed chunks={completed_chunks} | "
+                f"Main RSS={main_rss_mb_after_merge:.2f} MB"
             )
 
         next_chunk_id_to_merge += 1
 
-    return next_chunk_id_to_merge, processed_valid_records, completed_chunks
+    return (
+        next_chunk_id_to_merge,
+        processed_valid_records,
+        completed_chunks,
+        max_pending_results_seen,
+    )
 
 
 def run_detection_pipeline(
@@ -106,6 +239,8 @@ def run_detection_pipeline(
 
     completed_chunks = 0
     processed_valid_records = 0
+    chunk_profiles: list[ChunkMergeProfile] = []
+    max_pending_results_seen = 0
 
     def get_progress() -> tuple[int, int]:
         return completed_chunks, processed_valid_records
@@ -128,7 +263,7 @@ def run_detection_pipeline(
         encoding=run_config.encoding,
     )
 
-    pending_results: dict[int, ChunkProcessingResult] = {}
+    pending_results: dict[int, tuple[ChunkProcessingResult, float]] = {}
     next_chunk_id_to_merge = 1
 
     memory_monitor.start()
@@ -140,13 +275,15 @@ def run_detection_pipeline(
         initargs=(detection_config,),
     ) as pool:
         for chunk_result in pool.imap_unordered(process_chunk, tasks, chunksize=1):
-            pending_results[chunk_result.chunk_id] = chunk_result
+            pending_results[chunk_result.chunk_id] = (chunk_result, time.perf_counter())
+            max_pending_results_seen = max(max_pending_results_seen, len(pending_results))
             memory_monitor.take_sample(event_label="worker_result_received")
 
             (
                 next_chunk_id_to_merge,
                 processed_valid_records,
                 completed_chunks,
+                max_pending_results_seen,
             ) = merge_ready_results(
                 pending_results=pending_results,
                 next_chunk_id_to_merge=next_chunk_id_to_merge,
@@ -155,6 +292,8 @@ def run_detection_pipeline(
                 processed_valid_records=processed_valid_records,
                 completed_chunks=completed_chunks,
                 process=process,
+                chunk_profiles=chunk_profiles,
+                max_pending_results_seen=max_pending_results_seen,
                 verbose=run_config.verbose,
             )
             memory_monitor.take_sample(event_label="after_merge")
@@ -163,6 +302,7 @@ def run_detection_pipeline(
         next_chunk_id_to_merge,
         processed_valid_records,
         completed_chunks,
+        max_pending_results_seen,
     ) = merge_ready_results(
         pending_results=pending_results,
         next_chunk_id_to_merge=next_chunk_id_to_merge,
@@ -171,6 +311,8 @@ def run_detection_pipeline(
         processed_valid_records=processed_valid_records,
         completed_chunks=completed_chunks,
         process=process,
+        chunk_profiles=chunk_profiles,
+        max_pending_results_seen=max_pending_results_seen,
         verbose=run_config.verbose,
     )
     memory_monitor.take_sample(event_label="after_final_merge")
@@ -181,31 +323,71 @@ def run_detection_pipeline(
 
     global_summaries = merge_state.global_summaries
 
+    finalize_loitering_started_at = time.perf_counter()
     if run_config.enable_loitering_detection:
         loitering_events = finalize_loitering_detection(merge_state)
     else:
         loitering_events = []
+    finalize_loitering_elapsed_sec = time.perf_counter() - finalize_loitering_started_at
 
+    dfsi_started_at = time.perf_counter()
     dfsi_scores = calculate_all_dfsi(global_summaries)
     ranked_scores = sorted(
         dfsi_scores.items(),
         key=lambda item: item[1],
         reverse=True,
     )
+    dfsi_elapsed_sec = time.perf_counter() - dfsi_started_at
 
     memory_monitor.take_sample(event_label="before_final_save")
     memory_monitor.stop()
 
     worker_memory_output_file = run_config.memory_output_file.with_name("worker_memory_profile.csv")
     memory_summary_output_file = run_config.memory_output_file.with_name("memory_summary.csv")
+    profile_output_file = run_config.memory_output_file.with_name("pipeline_profile.csv")
 
     memory_monitor.save_aggregated_csv(run_config.memory_output_file)
     memory_monitor.save_worker_csv(worker_memory_output_file)
     memory_monitor.save_summary_csv(memory_summary_output_file)
+    _save_pipeline_profile_csv(profile_output_file, chunk_profiles)
 
     total_time = time.perf_counter() - start_time
     final_memory_rss_mb = get_rss_mb(process)
     memory_summary = memory_monitor.build_summary()
+
+    total_worker_elapsed_sec = sum(profile.worker_elapsed_sec for profile in chunk_profiles)
+    total_queue_wait_sec = sum(profile.queue_wait_sec for profile in chunk_profiles)
+    total_merge_elapsed_sec = sum(profile.merge_elapsed_sec for profile in chunk_profiles)
+    max_queue_wait_sec = max((profile.queue_wait_sec for profile in chunk_profiles), default=0.0)
+    max_merge_elapsed_sec = max((profile.merge_elapsed_sec for profile in chunk_profiles), default=0.0)
+
+    pipeline_profile = DetectionPipelineProfile(
+        chunk_profiles=chunk_profiles,
+        total_worker_elapsed_sec=total_worker_elapsed_sec,
+        total_queue_wait_sec=total_queue_wait_sec,
+        total_merge_elapsed_sec=total_merge_elapsed_sec,
+        max_queue_wait_sec=max_queue_wait_sec,
+        max_merge_elapsed_sec=max_merge_elapsed_sec,
+        max_pending_results=max_pending_results_seen,
+        finalize_loitering_elapsed_sec=finalize_loitering_elapsed_sec,
+        dfsi_elapsed_sec=dfsi_elapsed_sec,
+        profile_output_file=profile_output_file,
+    )
+
+    if run_config.verbose:
+        print("\nPIPELINE PROFILING SUMMARY")
+        print("-" * 80)
+        print(f"Profile CSV:              {profile_output_file}")
+        print(f"Chunks profiled:          {len(chunk_profiles)}")
+        print(f"Total worker time sum:    {total_worker_elapsed_sec:.2f} sec")
+        print(f"Total queue wait sum:     {total_queue_wait_sec:.2f} sec")
+        print(f"Total merge time sum:     {total_merge_elapsed_sec:.2f} sec")
+        print(f"Max queue wait per chunk: {max_queue_wait_sec:.2f} sec")
+        print(f"Max merge per chunk:      {max_merge_elapsed_sec:.2f} sec")
+        print(f"Max pending results:      {max_pending_results_seen}")
+        print(f"Finalize loitering:       {finalize_loitering_elapsed_sec:.2f} sec")
+        print(f"DFSI calculation:         {dfsi_elapsed_sec:.2f} sec")
+        print("-" * 80)
 
     return DetectionPipelineResult(
         global_summaries=global_summaries,
@@ -220,4 +402,5 @@ def run_detection_pipeline(
         worker_memory_output_file=worker_memory_output_file,
         memory_summary_output_file=memory_summary_output_file,
         memory_summary=memory_summary,
+        pipeline_profile=pipeline_profile,
     )

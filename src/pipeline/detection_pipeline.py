@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import time
 from dataclasses import dataclass
 from multiprocessing import Pool
@@ -24,6 +23,7 @@ from src.performance import get_current_process, get_rss_mb
 from src.performance.memory_profile import MemoryMonitor, MemorySummary
 from src.streaming import stream_csv_files_in_chunks
 from src.utils import load_port_zones
+from src.output import write_pipeline_profile_csv
 
 
 COLUMNS_CONSOLE_OUTPUT = {
@@ -101,34 +101,6 @@ def _build_loitering_state_snapshot(merge_state) -> tuple[int, int, int]:
     )
 
 
-def _save_pipeline_profile_csv(
-    profile_output_file: Path,
-    chunk_profiles: list[ChunkMergeProfile],
-) -> None:
-    profile_output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    fieldnames = [
-        "chunk_id",
-        "raw_row_count",
-        "valid_record_count",
-        "vessel_count",
-        "ac_sampled_record_count",
-        "loitering_sampled_record_count",
-        "worker_elapsed_sec",
-        "queue_wait_sec",
-        "merge_elapsed_sec",
-        "pending_results_before_merge",
-        "pending_results_after_merge",
-        "main_rss_mb_after_merge",
-    ]
-
-    with profile_output_file.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for profile in chunk_profiles:
-            writer.writerow({name: getattr(profile, name) for name in fieldnames})
-
-
 def merge_ready_results(
     pending_results: dict[int, tuple[ChunkProcessingResult, float]],
     next_chunk_id_to_merge: int,
@@ -152,8 +124,6 @@ def merge_ready_results(
         merge_started_at = time.perf_counter()
         queue_wait_sec = merge_started_at - received_at
 
-        loitering_before = _build_loitering_state_snapshot(merge_state)
-
         merge_chunk_result_into_state(
             merge_state=merge_state,
             chunk_result=chunk_result,
@@ -161,7 +131,6 @@ def merge_ready_results(
         )
 
         merge_elapsed_sec = time.perf_counter() - merge_started_at
-        loitering_after = _build_loitering_state_snapshot(merge_state)
         main_rss_mb_after_merge = get_rss_mb(process)
 
         ac_sampled_record_count = sum(
@@ -364,7 +333,7 @@ def run_detection_pipeline(
     memory_monitor.save_aggregated_csv(run_config.memory_output_file)
     memory_monitor.save_worker_csv(worker_memory_output_file)
     memory_monitor.save_summary_csv(memory_summary_output_file)
-    _save_pipeline_profile_csv(profile_output_file, chunk_profiles)
+    write_pipeline_profile_csv(profile_output_file, chunk_profiles)
 
     total_time = time.perf_counter() - start_time
     final_memory_rss_mb = get_rss_mb(process)

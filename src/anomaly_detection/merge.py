@@ -114,14 +114,14 @@ def merge_chunk_result_into_state(
             detection_config=merge_state.detection_config,
         )
 
-        if chunk_summary.sampled_records:
-            last_sampled_timestamp = chunk_summary.sampled_records[-1].timestamp
+        if chunk_summary.loitering_sampled_records:
+            last_sampled_timestamp = chunk_summary.loitering_sampled_records[-1].timestamp
             if latest_sampled_timestamp is None or last_sampled_timestamp > latest_sampled_timestamp:
                 latest_sampled_timestamp = last_sampled_timestamp
 
             _merge_loitering_sampled_records(
                 merge_state=merge_state,
-                sampled_records=chunk_summary.sampled_records,
+                sampled_records=chunk_summary.loitering_sampled_records,
                 port_zones=port_zones,
             )
 
@@ -129,8 +129,8 @@ def merge_chunk_result_into_state(
             last_record=chunk_summary.last_record,
             last_chunk_id=chunk_result.chunk_id,
             last_sampled_record=(
-                chunk_summary.sampled_records[-1]
-                if chunk_summary.sampled_records
+                chunk_summary.ac_sampled_records[-1]
+                if chunk_summary.ac_sampled_records
                 else None
             ),
         )
@@ -204,9 +204,9 @@ def _merge_boundary_anomalies(
     if boundary_state.last_chunk_id >= current_chunk_id:
         return
 
-    if boundary_state.last_sampled_record is not None and current_summary.sampled_records:
+    if boundary_state.last_sampled_record is not None and current_summary.ac_sampled_records:
         prev_sampled = boundary_state.last_sampled_record
-        curr_sampled = current_summary.sampled_records[0]
+        curr_sampled = current_summary.ac_sampled_records[0]
 
         going_dark_event, draft_change_event, _ = detect_all_pair_anomalies(
             previous=prev_sampled,

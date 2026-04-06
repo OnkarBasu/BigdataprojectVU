@@ -120,9 +120,13 @@ def _build_vessel_chunk_summary(
 
     first_record = records[0]
     last_record = records[-1]
-    sampled_records = _downsample_records(
+    ac_sampled_records = _downsample_records(
         records,
-        DETECTION_CONFIG.sampling.abc_sampling_seconds,
+        DETECTION_CONFIG.sampling.ac_sampling_seconds,
+    )
+    loitering_sampled_records = _downsample_records(
+        records,
+        DETECTION_CONFIG.sampling.loitering_sampling_seconds,
     )
 
     summary = VesselChunkSummary(
@@ -130,11 +134,12 @@ def _build_vessel_chunk_summary(
         record_count=len(records),
         first_record=first_record,
         last_record=last_record,
-        sampled_records=sampled_records,
+        ac_sampled_records=ac_sampled_records,
+        loitering_sampled_records=loitering_sampled_records,
     )
 
-    # A and C on sampled records
-    for previous, current in zip(sampled_records, sampled_records[1:]):
+    # A and C on A/C sampled records
+    for previous, current in zip(ac_sampled_records, ac_sampled_records[1:]):
         going_dark_event, draft_change_event, _ = detect_all_pair_anomalies(
             previous=previous,
             current=current,

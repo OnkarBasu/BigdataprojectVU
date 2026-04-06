@@ -35,7 +35,8 @@ class VesselChunkSummary:
         teleportation_events: All local anomaly D events detected inside the chunk.
         teleportation_d1_events: Local D1 near-simultaneous cloning events.
         teleportation_d2_events: Local D2 impossible-relocation events.
-        sampled_records: Time discretization.
+        ac_sampled_records: Time discretization used for anomalies A and C.
+        loitering_sampled_records: Time discretization used for anomaly B.
     """
 
     mmsi: int
@@ -50,7 +51,8 @@ class VesselChunkSummary:
     teleportation_events: list[TeleportationEvent] = field(default_factory=list)
     teleportation_d1_events: list[TeleportationEvent] = field(default_factory=list)
     teleportation_d2_events: list[TeleportationEvent] = field(default_factory=list)
-    sampled_records: list[AISRecord] = field(default_factory=list)
+    ac_sampled_records: list[AISRecord] = field(default_factory=list)
+    loitering_sampled_records: list[AISRecord] = field(default_factory=list)
 
 
 @dataclass(slots=True)

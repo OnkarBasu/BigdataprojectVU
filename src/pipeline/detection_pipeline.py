@@ -92,7 +92,7 @@ def _build_loitering_state_snapshot(merge_state) -> tuple[int, int, int]:
 
 def _count_sampled_records(chunk_result: ChunkProcessingResult) -> int:
     return sum(
-        len(summary.sampled_records)
+        len(summary.ac_sampled_records)
         for summary in chunk_result.vessel_summaries.values()
     )
 
@@ -198,8 +198,8 @@ def merge_ready_results(
                 f"merge={merge_elapsed_sec:.4f} sec | "
                 f"Raw rows={chunk_result.raw_row_count} | "
                 f"Valid records={chunk_result.valid_record_count} | "
-                f"Sampled records={chunk_profiles[-1].sampled_record_count} | "
                 f"Processed valid records: {processed_valid_records} | "
+                f"Sampled records={chunk_profiles[-1].sampled_record_count} | "
                 f"Pending before merge={pending_count_before_merge} | "
                 f"Completed chunks={completed_chunks} | "
                 f"Main RSS={main_rss_mb_after_merge:.2f} MB"

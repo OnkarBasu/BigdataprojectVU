@@ -26,12 +26,14 @@ from src.utils.ports import PortZone
 @dataclass(slots=True)
 class BoundaryState:
     """
-    Track the latest known record for a vessel while merging chunk results.
+    Track the latest known record and sampled-bucket state for a vessel.
     """
 
     last_record: AISRecord
     last_chunk_id: int
-    last_sampled_record: AISRecord | None
+    last_ac_sampled_record: AISRecord | None
+    last_ac_bucket_time: datetime | None
+    last_loitering_bucket_time: datetime | None
 
 
 @dataclass(slots=True)
@@ -72,12 +74,23 @@ def create_merge_state(
     loitering_state = None
     if enable_loitering_detection:
         loitering_cfg = detection_config.loitering
+        loitering_sampling_seconds = detection_config.sampling.loitering_sampling_seconds
+
+        effective_bucket_seconds = max(
+            loitering_cfg.bucket_seconds,
+            1,
+        )
+        effective_continuation_gap_seconds = max(
+            loitering_cfg.max_continuation_gap_seconds,
+            loitering_sampling_seconds + effective_bucket_seconds,
+        )
+
         loitering_state = LoiteringState(
-            bucket_seconds=loitering_cfg.bucket_seconds,
+            bucket_seconds=effective_bucket_seconds,
             max_distance_km=loitering_cfg.max_distance_km,
             max_sog_knots=loitering_cfg.max_sog_knots,
             min_duration_hours=loitering_cfg.min_duration_hours,
-            max_continuation_gap_seconds=loitering_cfg.max_continuation_gap_seconds,
+            max_continuation_gap_seconds=effective_continuation_gap_seconds,
             minimum_port_radius_km=loitering_cfg.minimum_port_radius_km,
         )
 
@@ -87,13 +100,44 @@ def create_merge_state(
     )
 
 
+def _bucket_start(timestamp: datetime, sampling_seconds: int) -> datetime:
+    """Anchor a timestamp to a fixed global sampling bucket."""
+    epoch_seconds = int(timestamp.timestamp())
+    bucketed = epoch_seconds - (epoch_seconds % sampling_seconds)
+    return datetime.fromtimestamp(bucketed, tz=timestamp.tzinfo)
+
+
+def _dedupe_bucketed_records(
+    records: list[AISRecord],
+    last_bucket_time: datetime | None,
+    sampling_seconds: int,
+) -> list[AISRecord]:
+    """
+    Remove repeated bucket representatives when the same bucket spans chunks.
+    """
+    if not records:
+        return []
+
+    deduped: list[AISRecord] = []
+    current_last_bucket = last_bucket_time
+
+    for record in records:
+        bucket_time = _bucket_start(record.timestamp, sampling_seconds)
+        if bucket_time == current_last_bucket:
+            continue
+        deduped.append(record)
+        current_last_bucket = bucket_time
+
+    return deduped
+
+
 def merge_chunk_result_into_state(
     merge_state: MergeState,
     chunk_result: ChunkProcessingResult,
     port_zones: Sequence[PortZone] | None = None,
 ) -> None:
     """Merge a single chunk result into the incremental global state."""
-    latest_sampled_timestamp: datetime | None = None
+    latest_loitering_timestamp: datetime | None = None
 
     for mmsi, chunk_summary in chunk_result.vessel_summaries.items():
         global_summary = merge_state.global_summaries.get(mmsi)
@@ -104,40 +148,72 @@ def merge_chunk_result_into_state(
             )
             merge_state.global_summaries[mmsi] = global_summary
 
+        boundary_state = merge_state.boundary_states.get(mmsi)
+
+        ac_records = _dedupe_bucketed_records(
+            records=chunk_summary.ac_sampled_records,
+            last_bucket_time=(boundary_state.last_ac_bucket_time if boundary_state is not None else None),
+            sampling_seconds=merge_state.detection_config.sampling.ac_sampling_seconds,
+        )
+        loitering_records = _dedupe_bucketed_records(
+            records=chunk_summary.loitering_sampled_records,
+            last_bucket_time=(
+                boundary_state.last_loitering_bucket_time if boundary_state is not None else None
+            ),
+            sampling_seconds=merge_state.detection_config.sampling.loitering_sampling_seconds,
+        )
+
         _merge_local_chunk_summary(global_summary, chunk_summary)
         _merge_boundary_anomalies(
             global_summary=global_summary,
-            boundary_state=merge_state.boundary_states.get(mmsi),
+            boundary_state=boundary_state,
             current_chunk_id=chunk_result.chunk_id,
             current_summary=chunk_summary,
+            current_ac_records=ac_records,
             port_zones=port_zones,
             detection_config=merge_state.detection_config,
         )
 
-        if chunk_summary.sampled_records:
-            last_sampled_timestamp = chunk_summary.sampled_records[-1].timestamp
-            if latest_sampled_timestamp is None or last_sampled_timestamp > latest_sampled_timestamp:
-                latest_sampled_timestamp = last_sampled_timestamp
+        if loitering_records:
+            last_loitering_timestamp = loitering_records[-1].timestamp
+            if latest_loitering_timestamp is None or last_loitering_timestamp > latest_loitering_timestamp:
+                latest_loitering_timestamp = last_loitering_timestamp
 
             _merge_loitering_sampled_records(
                 merge_state=merge_state,
-                sampled_records=chunk_summary.sampled_records,
+                sampled_records=loitering_records,
                 port_zones=port_zones,
             )
 
         merge_state.boundary_states[mmsi] = BoundaryState(
             last_record=chunk_summary.last_record,
             last_chunk_id=chunk_result.chunk_id,
-            last_sampled_record=(
-                chunk_summary.sampled_records[-1]
-                if chunk_summary.sampled_records
-                else None
+            last_ac_sampled_record=(
+                ac_records[-1]
+                if ac_records
+                else (boundary_state.last_ac_sampled_record if boundary_state is not None else None)
+            ),
+            last_ac_bucket_time=(
+                _bucket_start(
+                    chunk_summary.ac_sampled_records[-1].timestamp,
+                    merge_state.detection_config.sampling.ac_sampling_seconds,
+                )
+                if chunk_summary.ac_sampled_records
+                else (boundary_state.last_ac_bucket_time if boundary_state is not None else None)
+            ),
+            last_loitering_bucket_time=(
+                _bucket_start(
+                    chunk_summary.loitering_sampled_records[-1].timestamp,
+                    merge_state.detection_config.sampling.loitering_sampling_seconds,
+                )
+                if chunk_summary.loitering_sampled_records
+                else (boundary_state.last_loitering_bucket_time if boundary_state is not None else None)
             ),
         )
 
-    if merge_state.loitering_state is not None and latest_sampled_timestamp is not None:
+    if merge_state.loitering_state is not None and latest_loitering_timestamp is not None:
         current_bucket_time = _bucketize_timestamp(
-            latest_sampled_timestamp,
+            latest_loitering_timestamp,
             merge_state.loitering_state.bucket_seconds,
         )
         _process_ready_loitering_buckets(
@@ -194,6 +270,7 @@ def _merge_boundary_anomalies(
     boundary_state: BoundaryState | None,
     current_chunk_id: int,
     current_summary: VesselChunkSummary,
+    current_ac_records: list[AISRecord],
     port_zones: Sequence[PortZone] | None = None,
     detection_config: DetectionConfig = DEFAULT_DETECTION_CONFIG,
 ) -> None:
@@ -204,9 +281,9 @@ def _merge_boundary_anomalies(
     if boundary_state.last_chunk_id >= current_chunk_id:
         return
 
-    if boundary_state.last_sampled_record is not None and current_summary.sampled_records:
-        prev_sampled = boundary_state.last_sampled_record
-        curr_sampled = current_summary.sampled_records[0]
+    if boundary_state.last_ac_sampled_record is not None and current_ac_records:
+        prev_sampled = boundary_state.last_ac_sampled_record
+        curr_sampled = current_ac_records[0]
 
         going_dark_event, draft_change_event, _ = detect_all_pair_anomalies(
             previous=prev_sampled,

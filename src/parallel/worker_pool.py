@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict
+from datetime import datetime
 from typing import DefaultDict, Sequence
 
 from src.anomaly_detection import detect_all_pair_anomalies, preload_land_geometry
@@ -84,25 +85,36 @@ def _group_records_by_mmsi(records: list[AISRecord]) -> dict[int, list[AISRecord
     return grouped
 
 
-def _downsample_records(
+def _bucket_start(timestamp: datetime, sampling_seconds: int) -> datetime:
+    """Anchor a timestamp to a fixed global sampling bucket."""
+    epoch_seconds = int(timestamp.timestamp())
+    bucketed = epoch_seconds - (epoch_seconds % sampling_seconds)
+    return datetime.fromtimestamp(bucketed, tz=timestamp.tzinfo)
+
+
+def _sample_records_by_global_buckets(
     records: list[AISRecord],
     sampling_seconds: int,
 ) -> list[AISRecord]:
-    """Keep at most one record per sampling interval for one vessel."""
+    """
+    Keep one representative per globally anchored time bucket for one vessel.
+
+    This is chunk-independent in the sense that the chosen bucket boundaries are
+    fixed globally rather than relative to the first row in the chunk. It gives
+    the main process a stable sampling stream that can be deduplicated across
+    chunk boundaries.
+    """
     if sampling_seconds <= 0 or len(records) <= 1:
         return records
 
-    sampled: list[AISRecord] = [records[0]]
-    last_kept = records[0]
+    sampled: list[AISRecord] = []
+    last_bucket_start: datetime | None = None
 
-    for record in records[1:]:
-        gap_seconds = (record.timestamp - last_kept.timestamp).total_seconds()
-        if gap_seconds >= sampling_seconds:
+    for record in records:
+        bucket_start = _bucket_start(record.timestamp, sampling_seconds)
+        if bucket_start != last_bucket_start:
             sampled.append(record)
-            last_kept = record
-
-    if sampled[-1] is not records[-1]:
-        sampled.append(records[-1])
+            last_bucket_start = bucket_start
 
     return sampled
 
@@ -120,9 +132,14 @@ def _build_vessel_chunk_summary(
 
     first_record = records[0]
     last_record = records[-1]
-    sampled_records = _downsample_records(
+
+    ac_sampled_records = _sample_records_by_global_buckets(
         records,
-        DETECTION_CONFIG.sampling.abc_sampling_seconds,
+        DETECTION_CONFIG.sampling.ac_sampling_seconds,
+    )
+    loitering_sampled_records = _sample_records_by_global_buckets(
+        records,
+        DETECTION_CONFIG.sampling.loitering_sampling_seconds,
     )
 
     summary = VesselChunkSummary(
@@ -130,11 +147,12 @@ def _build_vessel_chunk_summary(
         record_count=len(records),
         first_record=first_record,
         last_record=last_record,
-        sampled_records=sampled_records,
+        ac_sampled_records=ac_sampled_records,
+        loitering_sampled_records=loitering_sampled_records,
     )
 
-    # A and C on sampled records
-    for previous, current in zip(sampled_records, sampled_records[1:]):
+    # A and C on globally anchored bucket samples inside the chunk
+    for previous, current in zip(ac_sampled_records, ac_sampled_records[1:]):
         going_dark_event, draft_change_event, _ = detect_all_pair_anomalies(
             previous=previous,
             current=current,

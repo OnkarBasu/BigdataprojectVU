@@ -55,7 +55,8 @@ flowchart TD
         G[Group records by MMSI]
         H[Sort records per vessel]
 
-        I[Downsample records for A, B, and C]
+        I1[Downsample records for A and C]
+        I2[Downsample records for B]
         J[Use full resolution records for D]
 
         K[Detect local anomaly A Going Dark]
@@ -100,12 +101,13 @@ flowchart TD
 
     A --> B --> C --> D --> E
     E --> F --> G --> H
-    H --> I
+    H --> I1
+    H --> I2
     H --> J
 
-    I --> K
-    I --> L
-    I --> N
+    I1 --> K
+    I1 --> L
+    I2 --> N
 
     J --> M
     M --> M1
@@ -191,6 +193,22 @@ The pipeline is designed as a **streaming + multiprocessing system**:
   - remaining anomaly B state is finalized
   - DFSI (Dark Fleet Suspicion Index) is computed per vessel
   - result and visualization CSV files are exported
+
+---
+
+### Anomaly B (Loitering) processing
+
+Anomaly B uses a separate, coarser time sampling strategy compared to A and C:
+
+- A/C sampling: higher temporal resolution (default 5 minutes) for accurate boundary detection
+- B sampling: lower resolution (default 20 minutes) to reduce pairwise computation cost
+
+Loitering detection is performed incrementally during merge using:
+- time buckets
+- active vessel-pair tracking
+- continuity constraints adapted to the sampling interval
+
+This design significantly reduces the computational cost of anomaly B while preserving detection quality and stability across chunk boundaries.
 
 ---
 

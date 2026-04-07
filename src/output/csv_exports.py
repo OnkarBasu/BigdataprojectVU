@@ -215,3 +215,34 @@ def write_loitering_visualization_csv(
                     f"{row['avg_distance_km']:.3f}",
                 ]
             )
+
+
+def write_pipeline_profile_csv(
+    output_file: Path,
+    chunk_profiles: list,
+) -> None:
+    """
+    Write per-chunk pipeline profiling data to a CSV file.
+    """
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    fieldnames = [
+        "chunk_id",
+        "raw_row_count",
+        "valid_record_count",
+        "vessel_count",
+        "ac_sampled_record_count",
+        "loitering_sampled_record_count",
+        "worker_elapsed_sec",
+        "queue_wait_sec",
+        "merge_elapsed_sec",
+        "pending_results_before_merge",
+        "pending_results_after_merge",
+        "main_rss_mb_after_merge",
+    ]
+
+    with output_file.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for profile in chunk_profiles:
+            writer.writerow({name: getattr(profile, name) for name in fieldnames})

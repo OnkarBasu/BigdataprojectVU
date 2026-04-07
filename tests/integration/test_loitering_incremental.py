@@ -7,6 +7,7 @@ from src.anomaly_detection.merge import (
     finalize_loitering_detection,
     merge_chunk_result_into_state,
 )
+from src.config import DetectionConfig, LoiteringConfig, SamplingConfig
 from src.models import AISRecord, ChunkProcessingResult, VesselChunkSummary
 
 
@@ -32,14 +33,17 @@ def make_summary(
     *,
     mmsi: int,
     records: list[AISRecord],
+    loitering_sampled_records: list[AISRecord] | None = None,
 ) -> VesselChunkSummary:
     ordered = sorted(records, key=lambda r: r.timestamp)
+    sampled = ordered if loitering_sampled_records is None else loitering_sampled_records
     return VesselChunkSummary(
         mmsi=mmsi,
         record_count=len(ordered),
         first_record=ordered[0],
         last_record=ordered[-1],
-        sampled_records=ordered,
+        ac_sampled_records=ordered,
+        loitering_sampled_records=sampled,
     )
 
 
@@ -63,16 +67,35 @@ def make_chunk_result(
     )
 
 
+def make_loitering_config(loitering_sampling_seconds: int = 30 * 60) -> DetectionConfig:
+    return DetectionConfig(
+        loitering=LoiteringConfig(
+            max_distance_km=0.5,
+            max_sog_knots=1.0,
+            min_duration_hours=2.0,
+            bucket_seconds=5 * 60,
+            max_continuation_gap_seconds=2 * 5 * 60,
+            minimum_port_radius_km=0.0,
+        ),
+        sampling=SamplingConfig(
+            ac_sampling_seconds=5 * 60,
+            loitering_sampling_seconds=loitering_sampling_seconds,
+        ),
+    )
+
+
 def test_loitering_is_detected_across_chunk_boundary() -> None:
-    merge_state = create_merge_state(enable_loitering_detection=True)
+    merge_state = create_merge_state(
+        detection_config=make_loitering_config(),
+        enable_loitering_detection=True,
+    )
     port_zones = ()
 
     base_time = datetime(2025, 9, 1, 0, 0, 0)
-
     lat_a = 0.0
     lon_a = 0.0
     lat_b = 0.0
-    lon_b = 0.002  # ~222 m near equator
+    lon_b = 0.002
 
     chunk_1 = make_chunk_result(
         chunk_id=1,
@@ -90,17 +113,10 @@ def test_loitering_is_detected_across_chunk_boundary() -> None:
         },
     )
 
-    merge_chunk_result_into_state(
-        merge_state=merge_state,
-        chunk_result=chunk_1,
-        port_zones=port_zones,
-    )
+    merge_chunk_result_into_state(merge_state=merge_state, chunk_result=chunk_1, port_zones=port_zones)
 
-    summary_a_after_chunk_1 = merge_state.global_summaries[111000111]
-    summary_b_after_chunk_1 = merge_state.global_summaries[222000222]
-
-    assert len(summary_a_after_chunk_1.loitering_transfer_events) == 0
-    assert len(summary_b_after_chunk_1.loitering_transfer_events) == 0
+    assert len(merge_state.global_summaries[111000111].loitering_transfer_events) == 0
+    assert len(merge_state.global_summaries[222000222].loitering_transfer_events) == 0
 
     chunk_2 = make_chunk_result(
         chunk_id=2,
@@ -118,24 +134,14 @@ def test_loitering_is_detected_across_chunk_boundary() -> None:
         },
     )
 
-    merge_chunk_result_into_state(
-        merge_state=merge_state,
-        chunk_result=chunk_2,
-        port_zones=port_zones,
-    )
-
+    merge_chunk_result_into_state(merge_state=merge_state, chunk_result=chunk_2, port_zones=port_zones)
     events = finalize_loitering_detection(merge_state)
 
     assert len(events) == 1
-
-    summary_a = merge_state.global_summaries[111000111]
-    summary_b = merge_state.global_summaries[222000222]
-
-    assert len(summary_a.loitering_transfer_events) == 1
-    assert len(summary_b.loitering_transfer_events) == 1
+    assert len(merge_state.global_summaries[111000111].loitering_transfer_events) == 1
+    assert len(merge_state.global_summaries[222000222].loitering_transfer_events) == 1
 
     event = events[0]
-
     assert {event.mmsi_a, event.mmsi_b} == {111000111, 222000222}
     assert event.start_timestamp == base_time
     assert event.end_timestamp == base_time + timedelta(minutes=150)
@@ -145,15 +151,17 @@ def test_loitering_is_detected_across_chunk_boundary() -> None:
 
 
 def test_loitering_is_not_detected_when_sog_is_too_high() -> None:
-    merge_state = create_merge_state(enable_loitering_detection=True)
+    merge_state = create_merge_state(
+        detection_config=make_loitering_config(),
+        enable_loitering_detection=True,
+    )
     port_zones = ()
 
     base_time = datetime(2025, 9, 1, 0, 0, 0)
-
     lat_a = 0.0
     lon_a = 0.0
     lat_b = 0.0
-    lon_b = 0.002  # ~222 m near equator
+    lon_b = 0.002
 
     chunk_1 = make_chunk_result(
         chunk_id=1,
@@ -191,26 +199,23 @@ def test_loitering_is_not_detected_when_sog_is_too_high() -> None:
     merge_chunk_result_into_state(merge_state=merge_state, chunk_result=chunk_2, port_zones=port_zones)
 
     events = finalize_loitering_detection(merge_state)
-
     assert events == []
-
-    summary_a = merge_state.global_summaries[111000111]
-    summary_b = merge_state.global_summaries[222000222]
-
-    assert len(summary_a.loitering_transfer_events) == 0
-    assert len(summary_b.loitering_transfer_events) == 0
+    assert len(merge_state.global_summaries[111000111].loitering_transfer_events) == 0
+    assert len(merge_state.global_summaries[222000222].loitering_transfer_events) == 0
 
 
 def test_loitering_is_not_detected_when_distance_is_too_large() -> None:
-    merge_state = create_merge_state(enable_loitering_detection=True)
+    merge_state = create_merge_state(
+        detection_config=make_loitering_config(),
+        enable_loitering_detection=True,
+    )
     port_zones = ()
 
     base_time = datetime(2025, 9, 1, 0, 0, 0)
-
     lat_a = 0.0
     lon_a = 0.0
     lat_b = 0.0
-    lon_b = 0.006  # ~666 m near equator
+    lon_b = 0.006
 
     chunk_1 = make_chunk_result(
         chunk_id=1,
@@ -248,11 +253,6 @@ def test_loitering_is_not_detected_when_distance_is_too_large() -> None:
     merge_chunk_result_into_state(merge_state=merge_state, chunk_result=chunk_2, port_zones=port_zones)
 
     events = finalize_loitering_detection(merge_state)
-
     assert events == []
-
-    summary_a = merge_state.global_summaries[111000111]
-    summary_b = merge_state.global_summaries[222000222]
-
-    assert len(summary_a.loitering_transfer_events) == 0
-    assert len(summary_b.loitering_transfer_events) == 0
+    assert len(merge_state.global_summaries[111000111].loitering_transfer_events) == 0
+    assert len(merge_state.global_summaries[222000222].loitering_transfer_events) == 0

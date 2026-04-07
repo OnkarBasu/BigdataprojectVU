@@ -3,6 +3,7 @@ from .csv_exports import (
     write_teleportation_visualization_csv,
     write_going_dark_visualization_csv,
     write_loitering_visualization_csv,
+    write_pipeline_profile_csv,
 )
 
 __all__ = [
@@ -10,4 +11,5 @@ __all__ = [
     "write_teleportation_visualization_csv",
     "write_going_dark_visualization_csv",
     "write_loitering_visualization_csv",
+    "write_pipeline_profile_csv",
 ]

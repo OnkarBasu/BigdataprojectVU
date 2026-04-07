@@ -95,7 +95,7 @@ def test_parse_raw_rows_returns_only_valid_records() -> None:
         ),
         (
             "01/09/2025 12:05:00",
-            "Class B",   # invalid mobile type
+            "Class B",
             "245014000",
             "10.6",
             "20.6",
@@ -126,19 +126,19 @@ def test_group_records_by_mmsi_groups_records_correctly() -> None:
     assert len(grouped[245014000]) == 1
 
 
-def test_downsample_records_returns_original_when_sampling_is_non_positive() -> None:
+def test_sample_records_by_global_buckets_returns_original_when_sampling_is_non_positive() -> None:
     t0 = datetime(2025, 9, 1, 0, 0, 0)
     records = [
         make_record(mmsi=223456789, timestamp=t0, latitude=10.0, longitude=20.0),
         make_record(mmsi=223456789, timestamp=t0 + timedelta(minutes=1), latitude=10.01, longitude=20.0),
     ]
 
-    sampled = worker_pool._downsample_records(records, sampling_seconds=0)
+    sampled = worker_pool._sample_records_by_global_buckets(records, sampling_seconds=0)
 
     assert sampled == records
 
 
-def test_downsample_records_keeps_first_interval_points_and_last_point() -> None:
+def test_sample_records_by_global_buckets_keeps_one_record_per_fixed_bucket() -> None:
     t0 = datetime(2025, 9, 1, 0, 0, 0)
     records = [
         make_record(mmsi=223456789, timestamp=t0, latitude=10.0, longitude=20.0),
@@ -147,12 +147,14 @@ def test_downsample_records_keeps_first_interval_points_and_last_point() -> None
         make_record(mmsi=223456789, timestamp=t0 + timedelta(minutes=9), latitude=10.03, longitude=20.0),
     ]
 
-    sampled = worker_pool._downsample_records(records, sampling_seconds=300)
+    sampled = worker_pool._sample_records_by_global_buckets(records, sampling_seconds=300)
 
-    assert sampled[0] == records[0]
-    assert sampled[1] == records[2]
-    assert sampled[-1] == records[-1]
-    assert len(sampled) == 3
+    assert sampled == [records[0], records[2]]
+
+
+def test_bucket_start_anchors_timestamp_to_global_bucket() -> None:
+    timestamp = datetime(2025, 9, 1, 0, 7, 42)
+    assert worker_pool._bucket_start(timestamp, 300) == datetime(2025, 9, 1, 0, 5, 0)
 
 
 def test_build_vessel_chunk_summary_raises_when_records_are_empty() -> None:
@@ -187,11 +189,16 @@ def test_build_vessel_chunk_summary_sets_basic_fields() -> None:
     assert summary.record_count == 2
     assert summary.first_record == records[0]
     assert summary.last_record == records[1]
-    assert summary.sampled_records[0] == records[0]
-    assert summary.sampled_records[-1] == records[-1]
+
+    assert len(summary.ac_sampled_records) >= 1
+    assert all(record in records for record in summary.ac_sampled_records)
+
+    assert summary.ac_sampled_records[0] == records[0]
+
+    assert all(record in records for record in summary.loitering_sampled_records)
 
 
-def test_build_vessel_chunk_summary_detects_going_dark_and_draft_change_on_sampled_records() -> None:
+def test_build_vessel_chunk_summary_detects_going_dark_and_draft_change_on_ac_sampled_records() -> None:
     worker_pool.PORT_ZONES = (
         make_port(latitude=0.0, longitude=0.0, radius_km=5.0),
     )

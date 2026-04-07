@@ -18,6 +18,21 @@ from src.output import (
 from src.pipeline import run_detection_pipeline
 
 
+TOP_DFSI_COLUMNS = {
+    "Rank": 5,
+    "MMSI": 11,
+    "DFSI": 9,
+    "Gap h": 8,
+    "D2 km": 10,
+    "Draft": 7,
+    "A": 5,
+    "B": 5,
+    "D": 5,
+    "D1": 5,
+    "D2": 5,
+}
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     """
     Build the CLI argument parser for the detection script.
@@ -279,19 +294,27 @@ def main() -> None:
     print("=" * 80)
 
     print(f"Top {min(top_n, len(ranked_scores))} vessels by DFSI:")
+    top_header = " | ".join(f"{name:<{width}}" for name, width in TOP_DFSI_COLUMNS.items())
+    top_separator = "-" * len(top_header)
+
+    print(f"{top_separator}")
+    print(top_header)
+    print(top_separator)
+
     for rank, (mmsi, score) in enumerate(ranked_scores[:top_n], start=1):
         summary = global_summaries[mmsi]
         print(
-            f"{rank:>2}. MMSI={mmsi} | "
-            f"DFSI={score:.3f} | "
-            f"max_gap_hours={summary.max_gap_hours:.2f} | "
-            f"impossible_relocation_km_d2={summary.total_impossible_jump_km:.2f} | "
-            f"draft_changes={summary.draft_change_count} | "
-            f"going_dark={len(summary.going_dark_events)} | "
-            f"teleportation={len(summary.teleportation_events)} | "
-            f"D1={len(summary.teleportation_d1_events)} | "
-            f"D2={len(summary.teleportation_d2_events)} | "
-            f"B={len(summary.loitering_transfer_events)}"
+            f"{rank:<{TOP_DFSI_COLUMNS['Rank']}} | "
+            f"{mmsi:<{TOP_DFSI_COLUMNS['MMSI']}} | "
+            f"{score:<{TOP_DFSI_COLUMNS['DFSI']}.3f} | "
+            f"{summary.max_gap_hours:<{TOP_DFSI_COLUMNS['Gap h']}.2f} | "
+            f"{summary.total_impossible_jump_km:<{TOP_DFSI_COLUMNS['D2 km']}.2f} | "
+            f"{summary.draft_change_count:<{TOP_DFSI_COLUMNS['Draft']}} | "
+            f"{len(summary.going_dark_events):<{TOP_DFSI_COLUMNS['A']}} | "
+            f"{len(summary.loitering_transfer_events):<{TOP_DFSI_COLUMNS['B']}} | "
+            f"{len(summary.teleportation_events):<{TOP_DFSI_COLUMNS['D']}} | "
+            f"{len(summary.teleportation_d1_events):<{TOP_DFSI_COLUMNS['D1']}} | "
+            f"{len(summary.teleportation_d2_events):<{TOP_DFSI_COLUMNS['D2']}}"
         )
 
 

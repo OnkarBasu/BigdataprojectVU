@@ -39,7 +39,8 @@ class TeleportationConfig:
 
 @dataclass(slots=True, frozen=True)
 class SamplingConfig:
-    abc_sampling_seconds: int = 5 * 60
+    ac_sampling_seconds: int = 5 * 60
+    loitering_sampling_seconds: int = 20 * 60
 
 
 @dataclass(slots=True, frozen=True)

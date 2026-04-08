@@ -26,7 +26,13 @@ from src.utils.ports import PortZone
 @dataclass(slots=True)
 class BoundaryState:
     """
-    Track the latest known record and sampled-bucket state for a vessel.
+    Per-vessel state carried across chunk boundaries.
+
+    This state keeps the latest full-resolution record and the latest
+    sampled representatives needed to:
+    - detect anomalies spanning across chunk boundaries;
+    - deduplicate globally bucketed sampled records when the same
+      sampling bucket appears in adjacent chunks.
     """
 
     last_record: AISRecord
@@ -38,7 +44,17 @@ class BoundaryState:
 
 @dataclass(slots=True)
 class LoiteringState:
-    """Incremental state for anomaly B detection during ordered merge."""
+    """
+    Incremental anomaly B state maintained in the main process.
+
+    The state stores:
+    - sampled candidate points grouped by time bucket;
+    - currently active vessel pairs tracked across buckets;
+    - finalized loitering/transfer events.
+
+    It allows anomaly B to be reduced online during ordered merge rather
+    than after materializing all vessel points globally.
+    """
 
     pending_bucket_points: dict[datetime, list[_LoiteringPoint]] = field(
         default_factory=lambda: defaultdict(list)
@@ -57,7 +73,14 @@ class LoiteringState:
 @dataclass(slots=True)
 class MergeState:
     """
-    Incremental merge state maintained by the main process.
+    Global incremental state maintained by the main process during ordered
+    chunk merge.
+
+    It combines:
+    - final per-vessel summaries;
+    - per-vessel boundary state for cross-chunk anomaly detection;
+    - optional anomaly B incremental state;
+    - the active detection configuration.
     """
 
     global_summaries: dict[int, VesselGlobalSummary] = field(default_factory=dict)
@@ -70,7 +93,13 @@ def create_merge_state(
     detection_config: DetectionConfig = DEFAULT_DETECTION_CONFIG,
     enable_loitering_detection: bool = False,
 ) -> MergeState:
-    """Create an empty merge state for incremental chunk merging."""
+    """
+    Create a fresh merge state for ordered chunk reduction.
+
+    If anomaly B detection is enabled, initialize its incremental state
+    using effective bucket and continuation-gap parameters derived from
+    the detection configuration and loitering sampling interval.
+    """
     loitering_state = None
     if enable_loitering_detection:
         loitering_cfg = detection_config.loitering
@@ -113,7 +142,10 @@ def _dedupe_bucketed_records(
     sampling_seconds: int,
 ) -> list[AISRecord]:
     """
-    Remove repeated bucket representatives when the same bucket spans chunks.
+    Remove repeated sampled representatives when the same global sampling
+    bucket appears across adjacent chunks.
+
+    The previous bucket time is taken from the vessel boundary state.
     """
     if not records:
         return []
@@ -136,7 +168,18 @@ def merge_chunk_result_into_state(
     chunk_result: ChunkProcessingResult,
     port_zones: Sequence[PortZone] | None = None,
 ) -> None:
-    """Merge a single chunk result into the incremental global state."""
+    """
+    Merge one worker-produced chunk result into the global ordered state.
+
+    For each vessel present in the chunk, this function:
+    - merges local per-chunk aggregates and events;
+    - detects cross-chunk boundary anomalies for A, C, and D;
+    - deduplicates globally bucketed sampled records across chunk edges;
+    - feeds anomaly B sampled records into the incremental loitering state.
+
+    After all vessel summaries in the chunk are merged, ready anomaly B
+    buckets may be reduced using the current loitering watermark.
+    """
     latest_loitering_timestamp: datetime | None = None
 
     for mmsi, chunk_summary in chunk_result.vessel_summaries.items():
@@ -229,7 +272,12 @@ def merge_chunk_results(
     detection_config: DetectionConfig = DEFAULT_DETECTION_CONFIG,
     enable_loitering_detection: bool = False,
 ) -> dict[int, VesselGlobalSummary]:
-    """Merge per-chunk worker results into global per-vessel summaries."""
+    """
+    Merge multiple chunk results into final global vessel summaries.
+
+    This is a batch convenience wrapper around the same ordered merge
+    logic used by the streaming pipeline.
+    """
     merge_state = create_merge_state(
         detection_config=detection_config,
         enable_loitering_detection=enable_loitering_detection,
@@ -249,7 +297,10 @@ def _merge_local_chunk_summary(
     global_summary: VesselGlobalSummary,
     chunk_summary: VesselChunkSummary,
 ) -> None:
-    """Merge local worker results for one vessel into the global summary."""
+    """
+    Append all anomalies and aggregate metrics detected fully inside one
+    chunk to the vessel's global summary.
+    """
     global_summary.record_count += chunk_summary.record_count
     global_summary.max_gap_hours = max(
         global_summary.max_gap_hours,
@@ -274,7 +325,15 @@ def _merge_boundary_anomalies(
     port_zones: Sequence[PortZone] | None = None,
     detection_config: DetectionConfig = DEFAULT_DETECTION_CONFIG,
 ) -> None:
-    """Detect and merge anomalies spanning across chunk boundaries."""
+    """
+    Detect anomalies that span the boundary between the previously merged
+    chunk state and the current chunk for one vessel.
+
+    Boundary handling is split by anomaly type:
+    - A and C are checked using sampled A/C representatives;
+    - D is checked using the last full-resolution record from the previous
+      chunk and the first full-resolution record from the current chunk.
+    """
     if boundary_state is None:
         return
 
@@ -324,7 +383,13 @@ def _merge_boundary_anomalies(
 
 
 def finalize_loitering_detection(merge_state: MergeState) -> list[LoiteringTransferEvent]:
-    """Finalize incremental anomaly B detection and return all events."""
+    """
+    Finalize anomaly B detection after all chunks have been merged.
+
+    This flushes all remaining ready buckets, closes any still-active
+    vessel pairs, stores completed events into vessel summaries, and
+    returns the final list of loitering/transfer events.
+    """
     loitering_state = merge_state.loitering_state
     if loitering_state is None:
         return []
@@ -356,7 +421,10 @@ def _merge_loitering_sampled_records(
     sampled_records: list[AISRecord],
     port_zones: Sequence[PortZone] | None,
 ) -> None:
-    """Convert sampled vessel records into incremental anomaly B bucket state."""
+    """
+    Convert sampled vessel records into anomaly B candidate points and
+    append them to the corresponding loitering time buckets.
+    """
     loitering_state = merge_state.loitering_state
     if loitering_state is None or port_zones is None:
         return
@@ -383,7 +451,10 @@ def _process_ready_loitering_buckets(
     watermark_bucket_time: datetime | None,
     flush_all: bool,
 ) -> None:
-    """Process all anomaly B buckets that are ready for ordered reduction."""
+    """
+    Reduce all loitering buckets that are safe to process under the current
+    watermark, or all remaining buckets when ``flush_all`` is True.
+    """
     loitering_state = merge_state.loitering_state
     if loitering_state is None:
         return
@@ -404,7 +475,10 @@ def _process_loitering_bucket(
     bucket_time: datetime,
     points: list[_LoiteringPoint],
 ) -> None:
-    """Update incremental anomaly B pair state using one closed time bucket."""
+    """
+    Update active loitering pairs using all candidate points from one
+    completed time bucket, finalizing expired pairs when needed.
+    """
     loitering_state = merge_state.loitering_state
     if loitering_state is None:
         return

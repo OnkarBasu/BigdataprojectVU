@@ -100,7 +100,16 @@ def _classify_d2_quality(
     port_zones: Sequence[PortZone] | None,
     teleportation_config: TeleportationConfig,
 ) -> tuple[bool | None, bool | None, TeleportationQualityFlag, bool]:
-    """Classify D2 event quality and whether it should contribute to DFSI."""
+    """
+    Classify D2 event quality for downstream analysis and DFSI scoring.
+
+    Returns:
+        A tuple containing:
+        - coarse land-mask result for the start point;
+        - coarse land-mask result for the end point;
+        - quality flag explaining the classification;
+        - whether the D2 distance should contribute to DFSI.
+    """
     start_on_land = _is_point_on_land(previous.latitude, previous.longitude)
     end_on_land = _is_point_on_land(current.latitude, current.longitude)
 
@@ -307,16 +316,17 @@ def detect_teleportation(
     port_zones: Sequence[PortZone] | None = None,
 ) -> TeleportationEvent | None:
     """
-    Detect anomaly D for a pair of AIS records.
+    Detect anomaly D for a pair of AIS records from the same MMSI.
 
     The logic distinguishes two deterministic subtypes:
     - D1: near-simultaneous cloning within ``d1_max_gap_hours``;
     - D2: impossible relocation after a longer blackout, up to
       ``d2_max_gap_hours``.
 
-    For D2, the event is additionally quality-classified with a coarse
-    land-mask check so obvious inland/bad-coordinate cases can be excluded
-    from DFSI while still being preserved for post-analysis.
+    For D2, the event is additionally quality-filtered using a coarse
+    land mask and optional port proximity checks. The event is always
+    returned if detected, but ``counts_for_dfsi`` is set only for D2
+    events considered valid for scoring.
     """
     _validate_same_mmsi(previous, current)
 
@@ -479,8 +489,8 @@ def get_top_going_dark_vessel_visualization_data(
     global_summaries: dict[int, VesselGlobalSummary],
 ) -> tuple[int, list[dict[str, int | float]]] | None:
     """
-    Find the MMSI with the most Anomaly A (going dark) events and extract
-    coordinate pairs for map visualization.
+    Find the MMSI with the highest number of anomaly A events and export
+    event endpoint coordinates for map visualization.
     """
     if not global_summaries:
         return None
@@ -526,7 +536,12 @@ def _record_to_loitering_point(
     max_sog_knots: float,
     minimum_port_radius_km: float,
 ) -> _LoiteringPoint | None:
-    """Convert one sampled record into a valid anomaly B point candidate."""
+    """
+    Convert one sampled AIS record into an anomaly B candidate point.
+
+    The record is kept only if it represents a low-speed observation and
+    lies outside the configured port exclusion radius.
+    """
     if record.sog is None or record.sog >= max_sog_knots:
         return None
 
@@ -569,7 +584,14 @@ def _find_close_pairs_in_bucket(
     points: list[_LoiteringPoint],
     max_distance_km: float,
 ) -> dict[tuple[int, int], tuple[_LoiteringPoint, _LoiteringPoint, float]]:
-    """Find all vessel pairs within the distance threshold inside one time bucket."""
+    """
+    Find vessel pairs within the loitering distance threshold inside one
+    time bucket.
+
+    A coarse spatial grid is used for candidate generation, followed by
+    exact distance filtering. For each MMSI pair, only the closest
+    observation in the bucket is retained.
+    """
     if len(points) < 2:
         return {}
 
@@ -654,7 +676,10 @@ def _finalize_active_loitering_pair(
     active: _ActiveLoiteringPair,
     min_duration_hours: float,
 ) -> LoiteringTransferEvent | None:
-    """Convert an active pair state into a final anomaly B event if long enough."""
+    """
+    Convert an active loitering pair into a final anomaly B event if the
+    bucket-based co-location duration is long enough.
+    """
     duration_hours = (active.end_timestamp - active.start_timestamp).total_seconds() / SECONDS_IN_HOUR
     if duration_hours < min_duration_hours:
         return None
@@ -692,6 +717,14 @@ def _is_zero_coordinate(latitude: float, longitude: float) -> bool:
 
 
 def get_top_teleportation_d1_vessel_visualization_data(global_summaries):
+    """
+    Find the MMSI with the highest number of D1 events and export all
+    detected D1 point pairs for map visualization.
+
+    Note:
+        This ranking is based on raw D1 event count, not on the aggregated
+        D1 episode count used in DFSI scoring.
+    """
     best_mmsi = None
     best_count = 0
 
@@ -734,6 +767,13 @@ def get_top_teleportation_d1_vessel_visualization_data(global_summaries):
 
 
 def get_top_teleportation_d2_vessel_visualization_data(global_summaries):
+    """
+    Find the MMSI with the highest number of valid D2 events and export
+    only D2 events that contribute to DFSI.
+
+    Events flagged as suspect are excluded from this visualization ranking
+    because they do not contribute to the DFSI distance component.
+    """
     best_mmsi = None
     best_count = 0
 

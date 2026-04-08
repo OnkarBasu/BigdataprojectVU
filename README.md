@@ -2,6 +2,12 @@
 
 Shadow Fleet Anomaly Detection on AIS Data
 
+**Interactive Demo:**  
+Explore pipeline, anomalies, maps, and performance results:  
+[Open presentation](https://onkarbasu.github.io/BigdataprojectVU/)
+
+*Navigation: scroll or use the dots on the right side*
+
 ---
 
 ## Project task
@@ -300,10 +306,10 @@ S(n) = 1 / ((1 - P) + P / n)
 ├── analysis/
 |   └── performance_benchmarking.ipynb  # performance analysis
 ├── presentation/
-|   └── index.html         # interactive presentation
 ├── README.md              # You are here :)
 ├── CONTRIBUTING.md
 ├── LICENSE
+├── index.html             # interactive presentation
 └── requirements.txt
 ```
 

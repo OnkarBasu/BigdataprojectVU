@@ -10,13 +10,25 @@ Usage:
 
 from __future__ import annotations
 from pathlib import Path
+import base64
 import html as html_module
 
-ROOT = Path(__file__).parent.parent
+ROOT   = Path(__file__).parent.parent
+ASSETS = Path(__file__).parent / "assets"
 MAPS = {
     "going_dark": ROOT / "visualization/output/going_dark_map.html",
     "tele_d1":    ROOT / "visualization/output/teleportation_d1_map.html",
     "tele_d2":    ROOT / "visualization/output/teleportation_d2_map.html",
+}
+# Benchmark images expected in presentation/assets/
+IMGS = {
+    "mem_w1":       "mem_w1.png",
+    "mem_w4":       "mem_w4.png",
+    "heatmaps":     "heatmaps.png",
+    "speedup":      "speedup.png",
+    "runtime_chunk":"runtime_chunk.png",
+    "mem_chunk":    "mem_chunk.png",
+    "amdahl":       "amdahl.png",
 }
 OUT = Path(__file__).parent / "index.html"
 
@@ -24,6 +36,16 @@ OUT = Path(__file__).parent / "index.html"
 def load_srcdoc(path: Path) -> str:
     content = path.read_text(encoding="utf-8")
     return html_module.escape(content, quote=True)
+
+
+def load_img_b64(filename: str) -> str:
+    """Return a base64 data-URI for a PNG, or an empty-state placeholder."""
+    path = ASSETS / filename
+    if path.exists():
+        data = base64.b64encode(path.read_bytes()).decode()
+        return f"data:image/png;base64,{data}"
+    print(f"  MISSING image: presentation/assets/{filename}")
+    return ""          # empty → CSS placeholder shown
 
 
 def build() -> None:
@@ -36,9 +58,30 @@ def build() -> None:
     tele_d1_src    = load_srcdoc(MAPS["tele_d1"])    if MAPS["tele_d1"].exists()    else ""
     tele_d2_src    = load_srcdoc(MAPS["tele_d2"])    if MAPS["tele_d2"].exists()    else ""
 
-    out = TEMPLATE.replace("%%GOING_DARK%%", going_dark_src) \
-                  .replace("%%TELE_D1%%",    tele_d1_src)    \
-                  .replace("%%TELE_D2%%",    tele_d2_src)
+    print("Embedding benchmark images...")
+    imgs = {key: load_img_b64(fname) for key, fname in IMGS.items()}
+
+    def img_class(data: str) -> str:
+        return " empty" if not data else ""
+
+    out = TEMPLATE \
+        .replace("%%GOING_DARK%%",       going_dark_src) \
+        .replace("%%TELE_D1%%",          tele_d1_src)    \
+        .replace("%%TELE_D2%%",          tele_d2_src)    \
+        .replace("%%IMG_MEM_W1%%",       imgs["mem_w1"])        \
+        .replace("%%IMG_MEM_W4%%",       imgs["mem_w4"])        \
+        .replace("%%IMG_HEATMAPS%%",     imgs["heatmaps"])      \
+        .replace("%%IMG_SPEEDUP%%",      imgs["speedup"])       \
+        .replace("%%IMG_RT_CHUNK%%",     imgs["runtime_chunk"]) \
+        .replace("%%IMG_MEM_CHUNK%%",    imgs["mem_chunk"])     \
+        .replace("%%IMG_AMDAHL%%",       imgs["amdahl"])        \
+        .replace("%%MEM_W1_EMPTY%%",     img_class(imgs["mem_w1"]))        \
+        .replace("%%MEM_W4_EMPTY%%",     img_class(imgs["mem_w4"]))        \
+        .replace("%%HEATMAPS_EMPTY%%",   img_class(imgs["heatmaps"]))      \
+        .replace("%%SPEEDUP_EMPTY%%",    img_class(imgs["speedup"]))       \
+        .replace("%%RT_CHUNK_EMPTY%%",   img_class(imgs["runtime_chunk"])) \
+        .replace("%%MEM_CHUNK_EMPTY%%",  img_class(imgs["mem_chunk"]))     \
+        .replace("%%AMDAHL_EMPTY%%",     img_class(imgs["amdahl"]))
 
     OUT.write_text(out, encoding="utf-8")
     print(f"Built: {OUT}  ({OUT.stat().st_size // 1024} KB)")
@@ -110,7 +153,6 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 .pnode:nth-child(3){animation-delay:.15s}
 .pnode:nth-child(5){animation-delay:.25s}
 .pnode:nth-child(7){animation-delay:.35s}
-.pnode:nth-child(9){animation-delay:.45s}
 @keyframes riseUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
 
 .pcard{
@@ -303,7 +345,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 .cc .thresh{background:rgba(23,190,207,.1);color:#17becf;border:1px solid rgba(23,190,207,.2)}
 .cd .thresh{background:rgba(155,89,182,.1);color:#9b59b6;border:1px solid rgba(155,89,182,.2)}
 
-.acard-facts{list-style:none;display:flex;flex-direction:column;gap:4px;flex:1;overflow:hidden}
+.acard-facts{list-style:none;display:flex;flex-direction:column;gap:4px;overflow:hidden}
 .acard-facts li{font-size:.7rem;color:var(--text);padding-left:13px;
   position:relative;line-height:1.35;opacity:.85}
 .acard-facts li::before{content:'▸';position:absolute;left:0;font-size:.6rem;top:1px}
@@ -311,6 +353,28 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 .cb .acard-facts li::before{color:#f39c12}
 .cc .acard-facts li::before{color:#17becf}
 .cd .acard-facts li::before{color:#9b59b6}
+
+/* detected count strip */
+.acard-count{
+  margin-top:10px;padding-top:10px;
+  border-top:1px solid rgba(255,255,255,.06);
+  display:flex;align-items:center;justify-content:space-between;gap:8px}
+.count-left{display:flex;align-items:baseline;gap:5px}
+.count-num{font-size:1.8rem;font-weight:900;line-height:1;letter-spacing:-.02em}
+.ca .count-num{color:#e74c3c;text-shadow:0 0 20px rgba(231,76,60,.4)}
+.cb .count-num{color:#f39c12;text-shadow:0 0 20px rgba(243,156,18,.4)}
+.cc .count-num{color:#17becf;text-shadow:0 0 20px rgba(23,190,207,.4)}
+.cd .count-num{color:#9b59b6;text-shadow:0 0 20px rgba(155,89,182,.4)}
+.count-num.zero{color:var(--muted) !important;text-shadow:none !important}
+.count-label{font-size:.62rem;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.07em;line-height:1.3}
+.count-pill{font-size:.6rem;font-weight:700;padding:2px 8px;border-radius:10px;
+  letter-spacing:.04em;white-space:nowrap}
+.ca .count-pill{background:rgba(231,76,60,.12);color:#e74c3c}
+.cb .count-pill{background:rgba(243,156,18,.12);color:#f39c12}
+.cc .count-pill{background:rgba(23,190,207,.12);color:#17becf}
+.cd .count-pill{background:rgba(155,89,182,.12);color:#9b59b6}
+.count-pill.zero-pill{background:rgba(255,255,255,.05);color:var(--muted)}
 
 /* DFSI panel */
 .dfsi-panel{
@@ -370,6 +434,57 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 /* scrollbar */
 ::-webkit-scrollbar{width:5px;background:var(--bg)}
 ::-webkit-scrollbar-thumb{background:var(--bg3);border-radius:3px}
+
+/* ════════════════════════════════════════════════════════
+   BENCHMARK SLIDES 6 & 7
+════════════════════════════════════════════════════════ */
+.bench-slide{background:var(--bg);display:flex;flex-direction:column}
+.bench-header{
+  flex-shrink:0;height:58px;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 36px;background:var(--bg2);
+  border-bottom:2px solid rgba(231,76,60,.35)}
+.bench-header h2{font-size:1.05rem;font-weight:800;color:var(--white)}
+.bench-header p{font-size:.74rem;color:var(--muted);margin-top:1px}
+.bench-tag{font-size:.67rem;padding:3px 11px;border-radius:14px;font-weight:700;
+  letter-spacing:.04em;border:1px solid rgba(231,76,60,.3);
+  background:rgba(231,76,60,.1);color:#e74c3c}
+
+.bench-body{flex:1;display:flex;flex-direction:column;padding:14px 28px 10px;gap:12px;overflow:hidden}
+
+/* two-row layouts */
+.bench-row{display:flex;gap:12px;flex:1;min-height:0}
+.bench-row.single{flex:1.1}
+.bench-row.double{flex:.9}
+
+/* each chart card */
+.bchart{
+  flex:1;display:flex;flex-direction:column;
+  background:var(--glass);border:1px solid var(--glassborder);
+  border-radius:12px;overflow:hidden;
+  transition:border-color .2s,box-shadow .2s}
+.bchart:hover{border-color:rgba(231,76,60,.35);box-shadow:0 4px 20px rgba(231,76,60,.12)}
+.bchart.wide{flex:1.8}
+
+.bchart-img{
+  flex:1;min-height:0;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--bg2);padding:6px}
+.bchart-img img{
+  max-width:100%;max-height:100%;
+  object-fit:contain;border-radius:6px;
+  display:block}
+.bchart-img.empty{
+  background:repeating-linear-gradient(
+    45deg,var(--bg2) 0,var(--bg2) 10px,
+    var(--bg3) 10px,var(--bg3) 20px)}
+
+.bchart-caption{
+  flex-shrink:0;padding:7px 12px;
+  border-top:1px solid var(--glassborder);
+  font-size:.68rem;color:var(--muted);line-height:1.4;
+  background:rgba(0,0,0,.15)}
+.bchart-caption strong{color:var(--text)}
 </style>
 </head>
 <body>
@@ -380,6 +495,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
   <a href="#s3" title="Going Dark"></a>
   <a href="#s4" title="D1 Map"></a>
   <a href="#s5" title="D2 Map"></a>
+  <a href="#s6" title="Memory Benchmarks"></a>
+  <a href="#s7" title="Scalability"></a>
 </nav>
 
 <div class="deck" id="deck">
@@ -425,30 +542,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 
     <div class="pconn">
       <div class="ptrack"><div class="pdot"></div></div>
-      <div class="pconn-label">raw rows<br>streaming</div>
-    </div>
-
-    <!-- parser.py -->
-    <div class="pnode" data-key="parser">
-      <div class="pcard">
-        <div class="pcard-top-bar"></div>
-        <div class="picon">🧹</div>
-        <div class="pfile">parser.py</div>
-        <div class="ptitle">Cleaning Layer</div>
-        <ul class="pfacts">
-          <li>Runs inside each worker process</li>
-          <li>Class A vessels only — drops buoys, aircraft</li>
-          <li>Validates MMSI: 9-digit, no placeholders</li>
-          <li>Lat/lon range check, rejects (0,0) coords</li>
-          <li>Cheapest filter runs first → fail fast</li>
-        </ul>
-        <div class="pmore">click to explore</div>
-      </div>
-    </div>
-
-    <div class="pconn">
-      <div class="ptrack"><div class="pdot"></div></div>
-      <div class="pconn-label">clean chunks<br>dispatched</div>
+      <div class="pconn-label">raw chunks<br>dispatched</div>
     </div>
 
     <!-- worker_pool.py -->
@@ -456,11 +550,11 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
       <div class="pcard">
         <div class="pcard-top-bar"></div>
         <div class="picon">⚙️</div>
-        <div class="pfile">worker_pool.py</div>
+        <div class="pfile">worker_pool.py + parser.py</div>
         <div class="ptitle">Parallel Workers</div>
         <ul class="pfacts">
           <li>Pool.imap_unordered — N cores in parallel</li>
-          <li>Workers init once: PORT_ZONES + ROW_PARSER</li>
+          <li>parser.py cleans inside each worker: Class A only, 9-digit MMSI, valid coords</li>
           <li>Groups by MMSI, sorts by timestamp</li>
           <li>Downsamples to 5-min for anomalies A & C</li>
           <li>Detects A, B, C, D1, D2 per chunk</li>
@@ -590,6 +684,13 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
             <li>Runs on 5-min downsampled records</li>
             <li>DFSI contribution: <code style="font-family:var(--mono);font-size:.65rem">max_gap_hours / 2</code></li>
           </ul>
+          <div class="acard-count">
+            <div class="count-left">
+              <span class="count-num">444</span>
+              <span class="count-label">events<br>detected</span>
+            </div>
+            <span class="count-pill">in dataset</span>
+          </div>
         </div>
 
         <!-- B -->
@@ -613,6 +714,13 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
             <li>Outside port zones only — port visits excluded</li>
             <li>Runs post-merge on globally merged sampled records</li>
           </ul>
+          <div class="acard-count">
+            <div class="count-left">
+              <span class="count-num zero">0</span>
+              <span class="count-label">events<br>detected</span>
+            </div>
+            <span class="count-pill zero-pill">not triggered</span>
+          </div>
         </div>
 
         <!-- C -->
@@ -636,6 +744,13 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
             <li>Hardest anomaly to explain innocently</li>
             <li>DFSI contribution: <code style="font-family:var(--mono);font-size:.65rem">count &times; 15</code> — highest weight</li>
           </ul>
+          <div class="acard-count">
+            <div class="count-left">
+              <span class="count-num zero">0</span>
+              <span class="count-label">events<br>detected</span>
+            </div>
+            <span class="count-pill zero-pill">not triggered</span>
+          </div>
         </div>
 
         <!-- D -->
@@ -657,8 +772,17 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
             <li><strong>D1</strong> — near-simultaneous: two ships, one MMSI at same time</li>
             <li><strong>D2</strong> — impossible relocation after a longer AIS gap</li>
             <li>Rejects (0,0) coordinates and gaps &lt; 30 seconds</li>
-            <li>D2 DFSI: <code style="font-family:var(--mono);font-size:.65rem">total_D2_jump_nm / 10</code></li>
+            <li>D2 valid only if both points at sea (land mask filter)</li>
           </ul>
+          <div class="acard-count">
+            <div class="count-left">
+              <span class="count-num" style="font-size:1.3rem;line-height:1.2">
+                D1&nbsp;<span style="color:#9b59b6">50</span>
+                &nbsp;&nbsp;D2&nbsp;<span style="color:#9b59b6">1</span>
+              </span>
+            </div>
+            <span class="count-pill">events detected</span>
+          </div>
         </div>
 
       </div><!-- /anomaly-grid -->
@@ -667,44 +791,55 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
       <div class="dfsi-panel">
         <h3>Suspicion Scoring</h3>
         <h2>Dark Fleet Suspicion Index</h2>
-        <div class="dfsi-tagline">Every vessel receives a DFSI score aggregating evidence from all detected anomalies. Higher score = more suspicious. Output ranked in <code style="font-family:var(--mono);font-size:.68rem;color:var(--teal)">dfsi_results.csv</code></div>
+        <div class="dfsi-tagline">Every vessel receives a DFSI score combining four anomaly signals. Higher = more suspicious. Ranked in <code style="font-family:var(--mono);font-size:.68rem;color:var(--teal)">dfsi_results.csv</code></div>
 
         <div class="dfsi-formula-display">
           <div class="fh">DFSI =</div>
           <div>&nbsp;&nbsp;<span class="fc">max_gap_h</span> / 2</div>
-          <div>&nbsp;&nbsp;+ <span class="fc">D2_jump_nm</span> / 10</div>
-          <div>&nbsp;&nbsp;+ <span class="fc">draft_count</span> &times; 15</div>
+          <div>&nbsp;&nbsp;+ <span class="fc">draft_changes</span> &times; 15</div>
+          <div>&nbsp;&nbsp;+ <span class="fc">D1_episodes</span> &times; 20</div>
+          <div>&nbsp;&nbsp;+ <span class="fc">valid_D2_nm</span> / 10</div>
         </div>
 
         <div class="score-bars">
           <div class="sbar">
             <div class="sbar-head">
-              <div class="sbar-name">Anomaly A — Going Dark</div>
+              <div class="sbar-name">A — Going Dark &nbsp;<span style="color:#e74c3c;font-size:.7rem;font-weight:700">444 events</span></div>
               <div class="sbar-formula" style="color:#e74c3c">max_gap_h / 2</div>
             </div>
-            <div class="sbar-track"><div class="sbar-fill"></div></div>
-            <div class="sbar-sub">Proportional to worst single blackout duration. A 10h blackout scores 5 points.</div>
+            <div class="sbar-track"><div class="sbar-fill" style="width:55%"></div></div>
+            <div class="sbar-sub">Longest single blackout duration. 444 events found — worst gap contributes to score.</div>
           </div>
           <div class="sbar">
             <div class="sbar-head">
-              <div class="sbar-name">Anomaly D2 — Teleportation</div>
-              <div class="sbar-formula" style="color:#2ecc71">D2_jump_nm / 10</div>
-            </div>
-            <div class="sbar-track"><div class="sbar-fill"></div></div>
-            <div class="sbar-sub">Cumulative impossible jump distance. Only D2 counts — D1 is identity cloning not relocation.</div>
-          </div>
-          <div class="sbar">
-            <div class="sbar-head">
-              <div class="sbar-name">Anomaly C — Draft Change</div>
+              <div class="sbar-name">C — Draft Change &nbsp;<span style="color:#17becf;font-size:.7rem;font-weight:700">0 events</span></div>
               <div class="sbar-formula" style="color:#17becf">count &times; 15</div>
             </div>
-            <div class="sbar-track"><div class="sbar-fill"></div></div>
-            <div class="sbar-sub">Highest weight — each covert cargo op scores 15 points. Very hard to explain innocently.</div>
+            <div class="sbar-track"><div class="sbar-fill" style="width:3%;background:linear-gradient(90deg,#17becf,#1abc9c);animation-delay:.5s"></div></div>
+            <div class="sbar-sub">Highest per-event weight (×15). None found in this dataset — no covert cargo ops detected.</div>
+          </div>
+          <div class="sbar">
+            <div class="sbar-head">
+              <div class="sbar-name">D1 — Cloning Episodes &nbsp;<span style="color:#9b59b6;font-size:.7rem;font-weight:700">50 events</span></div>
+              <div class="sbar-formula" style="color:#9b59b6">episodes &times; 20</div>
+            </div>
+            <div class="sbar-track"><div class="sbar-fill" style="width:72%;background:linear-gradient(90deg,#9b59b6,#8e44ad);animation-delay:.7s"></div></div>
+            <div class="sbar-sub">50 raw events merged into episodes via 2h window. Each spoofing episode scores 20 pts.</div>
+          </div>
+          <div class="sbar">
+            <div class="sbar-head">
+              <div class="sbar-name">D2 — Valid Relocation &nbsp;<span style="color:#2ecc71;font-size:.7rem;font-weight:700">1 event</span></div>
+              <div class="sbar-formula" style="color:#2ecc71">valid_nm / 10</div>
+            </div>
+            <div class="sbar-track"><div class="sbar-fill" style="width:20%;background:linear-gradient(90deg,#2ecc71,#1abc9c);animation-delay:.9s"></div></div>
+            <div class="sbar-sub">Land mask applied — only at-sea jumps count. Suspect (land) events exported but excluded from score.</div>
           </div>
         </div>
 
         <div class="dfsi-note">
-          <strong>Output files:</strong> dfsi_results.csv (all vessels ranked) &middot; top_going_dark_vessel_map.csv &middot; top_teleportation_d1/d2_vessel_map.csv &middot; memory_profile.csv
+          <strong style="color:var(--text)">D1 episodes:</strong> consecutive D1 events within 2h merged into one spoofing episode &nbsp;&middot;&nbsp;
+          <strong style="color:var(--text)">D2 filter:</strong> coarse land mask removes land-crossing jumps &nbsp;&middot;&nbsp;
+          <strong style="color:var(--text)">Output:</strong> dfsi_results.csv
         </div>
       </div><!-- /dfsi-panel -->
 
@@ -769,6 +904,114 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
   </div>
   <div class="map-iframe-wrap">
     <iframe srcdoc="%%TELE_D2%%" sandbox="allow-scripts allow-same-origin"></iframe>
+  </div>
+</section>
+
+
+<!-- ════════════════════════════════════════════════════
+     SLIDE 6 — MEMORY & RUNTIME BENCHMARKS
+════════════════════════════════════════════════════ -->
+<section class="slide bench-slide" id="s6">
+  <div class="bench-header">
+    <div>
+      <h2>&#x1F4C8; Memory &amp; Runtime Benchmarks</h2>
+      <p>Per-worker memory profiles and chunk size / worker count impact on peak memory and runtime</p>
+    </div>
+    <span class="bench-tag">benchmark_w4_c50k &amp; w1_c50k</span>
+  </div>
+
+  <div class="bench-body">
+
+    <!-- Row 1: two memory timeline plots side by side -->
+    <div class="bench-row">
+      <div class="bchart">
+        <div class="bchart-img%%MEM_W1_EMPTY%%">
+          <img src="%%IMG_MEM_W1%%" alt="Per-Worker Memory w1"/>
+        </div>
+        <div class="bchart-caption">
+          <strong>Single-worker memory over time (w1, c50K)</strong> — RAM spikes on startup then stabilises flat at ~125 MB, confirming no memory leak across 400 s of processing.
+        </div>
+      </div>
+      <div class="bchart">
+        <div class="bchart-img%%MEM_W4_EMPTY%%">
+          <img src="%%IMG_MEM_W4%%" alt="Per-Worker Memory w4"/>
+        </div>
+        <div class="bchart-caption">
+          <strong>Four workers memory over time (w4, c50K)</strong> — All four workers track identically at ~125 MB with no divergence, proving the streaming architecture maintains constant per-worker footprint regardless of parallelism.
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 2: heatmaps spanning full width -->
+    <div class="bench-row single">
+      <div class="bchart">
+        <div class="bchart-img%%HEATMAPS_EMPTY%%">
+          <img src="%%IMG_HEATMAPS%%" alt="Memory and Runtime Heatmaps"/>
+        </div>
+        <div class="bchart-caption">
+          <strong>Peak process memory (MB) &amp; runtime (s) across all chunk sizes and worker counts</strong> — Memory scales with chunk size (row), not worker count (column). Runtime drops sharply at 2+ workers but plateaus beyond 4, revealing I/O-bound limits.
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ════════════════════════════════════════════════════
+     SLIDE 7 — SCALABILITY ANALYSIS
+════════════════════════════════════════════════════ -->
+<section class="slide bench-slide" id="s7">
+  <div class="bench-header">
+    <div>
+      <h2>&#x26A1; Scalability &amp; Parallelism Analysis</h2>
+      <p>Speedup curves, chunk size impact, worker memory cost, and Amdahl's Law fit</p>
+    </div>
+    <span class="bench-tag">Amdahl P = 29.7%</span>
+  </div>
+
+  <div class="bench-body">
+
+    <!-- Row 1: speedup + runtime vs chunk -->
+    <div class="bench-row">
+      <div class="bchart">
+        <div class="bchart-img%%SPEEDUP_EMPTY%%">
+          <img src="%%IMG_SPEEDUP%%" alt="Speedup vs Workers"/>
+        </div>
+        <div class="bchart-caption">
+          <strong>Speedup vs number of workers across chunk sizes</strong> — Larger chunks (500K–1000K) yield up to 1.35× speedup; smaller chunks (&lt;50K) barely improve due to IPC overhead dominating useful work.
+        </div>
+      </div>
+      <div class="bchart">
+        <div class="bchart-img%%RT_CHUNK_EMPTY%%">
+          <img src="%%IMG_RT_CHUNK%%" alt="Runtime vs Chunk Size"/>
+        </div>
+        <div class="bchart-caption">
+          <strong>Runtime vs chunk size</strong> — Runtime drops steeply from 10K to 100K rows per chunk, then plateaus. Optimal sweet spot is 200K–500K rows; beyond that gains are marginal.
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 2: peak worker memory + amdahl -->
+    <div class="bench-row">
+      <div class="bchart">
+        <div class="bchart-img%%MEM_CHUNK_EMPTY%%">
+          <img src="%%IMG_MEM_CHUNK%%" alt="Peak Worker Memory vs Chunk Size"/>
+        </div>
+        <div class="bchart-caption">
+          <strong>Peak worker memory vs chunk size</strong> — Memory scales linearly with chunk size and worker count. 14 workers at 1000K rows approaches 5 GB — confirms chunk size is the primary memory lever.
+        </div>
+      </div>
+      <div class="bchart">
+        <div class="bchart-img%%AMDAHL_EMPTY%%">
+          <img src="%%IMG_AMDAHL%%" alt="Amdahl's Law Analysis"/>
+        </div>
+        <div class="bchart-caption">
+          <strong>Amdahl's Law fit — chunk size 500K (P = 29.7% parallel)</strong> — Only ~30% of the workload is parallelisable; the remaining 70% (streaming, merging, I/O) is inherently sequential, capping theoretical max speedup at ~1.42×.
+        </div>
+      </div>
+    </div>
+
   </div>
 </section>
 
@@ -864,31 +1107,19 @@ const DETAILS = {
       'Memory footprint: only one chunk lives in RAM at any time regardless of file size',
     ]
   },
-  parser: {
-    file: 'src/streaming/parser.py',
-    title: 'Cleaning Layer — Filter chain validation',
-    points: [
-      'Runs inside each worker process, initialized once per worker via worker_init()',
-      'AISRowParser.parse_row() applies filters from cheapest to most expensive',
-      'Filter 1 — Vessel class: keep only Class A (commercial vessels); drops buoys, aircraft, coast stations',
-      'Filter 2 — Timestamp: must be parseable as UTC datetime; malformed strings dropped',
-      'Filter 3 — MMSI: must be exactly 9 digits; rejects placeholders like 000000000 or 111111111',
-      'Filter 4 — Coordinates: lat in [-90,90], lon in [-180,180]; rejects exact (0,0) placeholder',
-      'Filter 5 — SOG & draught: parsed as float if present; missing values allowed (not required)',
-      'Row dropped on first failure — invalid rows never reach anomaly detection logic',
-    ]
-  },
   worker: {
-    file: 'src/parallel/worker_pool.py',
-    title: 'Parallel Workers — Anomaly detection per chunk',
+    file: 'src/parallel/worker_pool.py + src/streaming/parser.py',
+    title: 'Parallel Workers + Cleaning — Detection per chunk',
     points: [
       'Uses multiprocessing.Pool.imap_unordered — chunks dispatched to workers as they arrive',
       'Worker processes initialized once via worker_init() — PORT_ZONES and ROW_PARSER loaded as globals',
-      'process_chunk() receives a raw chunk, parses rows, groups by MMSI, sorts each vessel by timestamp',
+      'parser.py cleaning runs inside each worker: AISRowParser.parse_row() applied per row before any detection',
+      'Filter chain (cheapest first): Class A only → valid timestamp → 9-digit MMSI → valid coords → SOG/draught',
+      'Row dropped on first failure — invalid rows never reach anomaly detection logic',
+      'process_chunk() groups clean rows by MMSI, sorts each vessel by timestamp',
       '_downsample_records() reduces to 5-minute intervals for anomalies A & C (reduces noise)',
       'Full-resolution records used for anomaly D — downsampling would hide teleportation signals',
       'Runs detect_going_dark(), detect_draft_change(), detect_teleportation() on every consecutive pair',
-      'Teleportation classified: gap <= 30min → D1 (cloning); 30min-24h → D2 (impossible relocation)',
       'Saves boundary records (first + last ping per vessel per chunk) for cross-chunk analysis in merge.py',
     ]
   },

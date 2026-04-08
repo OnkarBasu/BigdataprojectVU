@@ -278,13 +278,15 @@ class AISRowParser:
     """
     Parse compact raw AIS rows into ``AISRecord`` objects.
 
-    The parser validates required fields, converts values to typed fields,
-    and filters out rows that are irrelevant or invalid for the shadow fleet
-    detection task.
+    The parser:
+    - validates required fields and numeric ranges;
+    - converts raw strings into typed AIS fields;
+    - skips malformed rows and rows irrelevant to the project.
 
-    Project-specific policy:
-    - only vessel AIS messages of type "Class A" are accepted;
-    - malformed rows and unsupported object types are skipped.
+    Project-specific filtering:
+    - only vessel AIS messages of type ``Class A`` are accepted;
+    - invalid MMSI values are rejected;
+    - invalid or placeholder coordinates (including 0, 0) are rejected.
     """
 
     @staticmethod
@@ -384,14 +386,21 @@ class AISRowParser:
 
     def parse_row(self, row: RawRow) -> AISRecord | None:
         """
-        Parse a compact raw AIS row into an ``AISRecord``.
-
-        Args:
-            row: Raw AIS row containing only required fields in fixed order.
-
+        Parse one compact raw AIS row into an ``AISRecord``.
+    
+        The row is accepted only if it:
+        - has the expected compact field layout;
+        - represents a supported AIS mobile type;
+        - contains a valid timestamp and MMSI;
+        - contains finite in-range coordinates;
+        - does not use the placeholder coordinate (0, 0).
+    
+        Optional numeric fields such as draught may remain ``None`` when
+        missing or null-like.
+    
         Returns:
             Parsed ``AISRecord`` if the row is valid for the project,
-            otherwise None.
+            otherwise ``None``.
         """
         if len(row) != RAW_ROW_FIELD_COUNT:
             return None

@@ -21,11 +21,15 @@ class VesselChunkSummary:
     - boundary records needed for cross-chunk comparisons;
     - local aggregate values used later for DFSI calculation;
     - locally detected anomaly events found fully inside the chunk;
-    - sampling streams for anomaly A/C and anomaly B.
+    - sampled record streams for anomaly A/C and anomaly B.
+
+    Detection detail:
+    - A and C are evaluated on globally bucketed sampled records;
+    - D is evaluated on full-resolution consecutive records.
 
     Sampling note:
-    the worker now uses globally anchored time buckets rather than a pure
-    "gap from last kept point" rule. This makes the discretization stable
+    the worker uses globally anchored time buckets rather than a pure
+    "gap from last kept point" rule. This makes discretization stable
     across chunk boundaries when the main process deduplicates repeated
     bucket representatives.
     """
@@ -73,9 +77,9 @@ class VesselGlobalSummary:
     Fully merged anomaly summary for a vessel across all processed chunks.
 
     This object is constructed in the main process after combining the
-    partial results produced by worker processes. It aggregates all
-    locally detected anomalies and includes additional events detected
-    across chunk boundaries.
+    partial results produced by worker processes. It aggregates locally
+    detected anomalies, cross-chunk boundary anomalies, and finalized
+    anomaly B events produced during ordered merge.
 
     The summary contains the final metrics required for computing the
     DFSI (Dark Fleet Suspicion Index).
@@ -86,8 +90,8 @@ class VesselGlobalSummary:
             for this vessel across all chunks.
         max_gap_hours: Maximum AIS blackout duration contributing
             to anomaly A ("Going Dark").
-        total_impossible_jump_km: Sum of D2 impossible-relocation distances
-            contributing to DFSI.
+        total_impossible_jump_km: Sum of valid D2 impossible-relocation
+            distances contributing to DFSI.
         draft_change_count: Total number of anomaly C events
             (significant draught changes during AIS blackout).
         going_dark_events: All detected anomaly A events for the vessel.
@@ -95,6 +99,8 @@ class VesselGlobalSummary:
         teleportation_events: All detected anomaly D events for the vessel.
         teleportation_d1_events: All detected D1 events for the vessel.
         teleportation_d2_events: All detected D2 events for the vessel.
+        loitering_transfer_events: All finalized anomaly B events
+            associated with the vessel.
     """
 
     mmsi: int

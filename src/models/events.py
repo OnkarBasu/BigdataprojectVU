@@ -127,15 +127,15 @@ class LoiteringTransferEvent:
     """
     Detected anomaly B ("Loitering & Transfers") between two vessels.
 
-    Two distinct MMSI remain within a small distance while moving slowly
-    for a prolonged period of time away from ports.
+    Two distinct MMSI are repeatedly observed within a small distance,
+    at low speed, for a prolonged period of time away from ports.
 
     Attributes:
         mmsi_a: First vessel MMSI.
         mmsi_b: Second vessel MMSI.
-        start_timestamp: Start of co-location period.
-        end_timestamp: End of co-location period.
-        duration_hours: Total duration of the event.
+        start_timestamp: Start of the detected co-location period.
+        end_timestamp: End of the detected co-location period.
+        duration_hours: Total bucket-based event duration in hours.
 
         start_lat_a: Start latitude of vessel A.
         start_lon_a: Start longitude of vessel A.
@@ -147,8 +147,8 @@ class LoiteringTransferEvent:
         end_lat_b: End latitude of vessel B.
         end_lon_b: End longitude of vessel B.
 
-        min_distance_km: Minimum distance observed during event.
-        avg_distance_km: Average distance during event.
+        min_distance_km: Minimum distance observed during the event.
+        avg_distance_km: Average pair distance across retained observations.
     """
 
     mmsi_a: int

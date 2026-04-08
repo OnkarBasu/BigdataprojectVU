@@ -22,7 +22,17 @@ DETECTION_CONFIG: DetectionConfig = DEFAULT_DETECTION_CONFIG
 def worker_init(
     detection_config: DetectionConfig = DEFAULT_DETECTION_CONFIG,
 ) -> None:
-    """Initialize per-process worker state."""
+    """
+    Initialize per-process worker state.
+
+    Each worker loads reusable local resources once at startup:
+    - port zones for geographic filtering;
+    - the raw AIS row parser;
+    - the active detection configuration;
+    - the coarse land geometry used for D2 quality checks.
+
+    This avoids reloading heavy shared resources for every chunk.
+    """
     global PORT_ZONES
     global ROW_PARSER
     global DETECTION_CONFIG
@@ -37,7 +47,19 @@ def worker_init(
 
 
 def process_chunk(task: Chunk) -> ChunkProcessingResult:
-    """Process a single raw AIS chunk and compute per-vessel partial summaries."""
+    """
+    Process one raw AIS chunk inside a worker process.
+
+    The worker:
+    - parses and validates raw AIS rows;
+    - groups valid records by MMSI;
+    - sorts each vessel stream by timestamp;
+    - builds a per-vessel chunk summary with:
+      - local A/C anomalies on sampled records;
+      - local D anomalies on full-resolution records;
+      - sampled record streams needed later for cross-chunk merge
+        and anomaly B detection.
+    """
     chunk_id, raw_rows = task
     start_time = time.perf_counter()
 
@@ -61,7 +83,10 @@ def process_chunk(task: Chunk) -> ChunkProcessingResult:
 
 
 def _parse_raw_rows(raw_rows: list[tuple[str, str, str, str, str, str, str]]) -> list[AISRecord]:
-    """Parse all raw rows in a chunk into valid AIS records."""
+    """
+    Parse raw AIS rows into valid ``AISRecord`` objects, skipping rows that
+    fail validation or are not relevant to the project.
+    """
     if ROW_PARSER is None:
         raise RuntimeError("ROW_PARSER is not initialized in worker process")
 
@@ -76,7 +101,10 @@ def _parse_raw_rows(raw_rows: list[tuple[str, str, str, str, str, str, str]]) ->
 
 
 def _group_records_by_mmsi(records: list[AISRecord]) -> dict[int, list[AISRecord]]:
-    """Group AIS records by MMSI."""
+    """
+    Group parsed AIS records by vessel MMSI before per-vessel sorting and
+    anomaly analysis.
+    """
     grouped: DefaultDict[int, list[AISRecord]] = defaultdict(list)
 
     for record in records:
@@ -99,10 +127,10 @@ def _sample_records_by_global_buckets(
     """
     Keep one representative per globally anchored time bucket for one vessel.
 
-    This is chunk-independent in the sense that the chosen bucket boundaries are
-    fixed globally rather than relative to the first row in the chunk. It gives
-    the main process a stable sampling stream that can be deduplicated across
-    chunk boundaries.
+    Bucket boundaries are fixed in absolute time rather than relative to the
+    start of the chunk. This makes sampling stable across chunk boundaries,
+    so the main process can safely deduplicate repeated bucket
+    representatives during ordered merge.
     """
     if sampling_seconds <= 0 or len(records) <= 1:
         return records
@@ -123,7 +151,16 @@ def _build_vessel_chunk_summary(
     mmsi: int,
     records: list[AISRecord],
 ) -> VesselChunkSummary:
-    """Build a partial per-vessel anomaly summary for one chunk."""
+    """
+    Build a partial anomaly summary for one vessel inside a single chunk.
+
+    The summary includes:
+    - first/last full-resolution records for cross-chunk boundary checks;
+    - globally bucketed sampled records for anomaly A/C merge logic;
+    - separately sampled records for anomaly B;
+    - locally detected A and C anomalies on sampled records;
+    - locally detected D anomalies on full-resolution consecutive records.
+    """
     if not records:
         raise ValueError("records must not be empty")
 

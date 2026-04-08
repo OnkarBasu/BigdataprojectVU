@@ -44,6 +44,12 @@ COLUMNS_CONSOLE_OUTPUT = {
 
 @dataclass(slots=True, frozen=True)
 class ChunkMergeProfile:
+    """
+    Per-chunk profiling snapshot captured after ordered merge.
+
+    Stores worker timing, queue wait, merge cost, sampled-record counts,
+    pending-buffer size, and main-process RSS after the chunk is merged.
+    """
     chunk_id: int
     raw_row_count: int
     valid_record_count: int
@@ -60,6 +66,13 @@ class ChunkMergeProfile:
 
 @dataclass(slots=True, frozen=True)
 class DetectionPipelineProfile:
+    """
+    Aggregate profiling summary for one full pipeline run.
+
+    Includes per-chunk profiles, summed worker/queue/merge timings,
+    maxima for queueing and merge delays, anomaly B finalization time,
+    DFSI calculation time, and the output path of the saved profile CSV.
+    """
     chunk_profiles: list[ChunkMergeProfile]
     total_worker_elapsed_sec: float
     total_queue_wait_sec: float
@@ -74,6 +87,17 @@ class DetectionPipelineProfile:
 
 @dataclass(slots=True, frozen=True)
 class DetectionPipelineResult:
+    """
+    Final structured result returned by ``run_detection_pipeline``.
+
+    Contains:
+    - merged global vessel summaries;
+    - DFSI scores and ranking;
+    - finalized anomaly B events;
+    - processing and runtime counters;
+    - memory profiling outputs and summary;
+    - pipeline profiling metadata.
+    """
     global_summaries: dict
     dfsi_scores: dict[int, float]
     ranked_scores: list[tuple[int, float]]
@@ -89,18 +113,6 @@ class DetectionPipelineResult:
     pipeline_profile: DetectionPipelineProfile
 
 
-def _build_loitering_state_snapshot(merge_state) -> tuple[int, int, int]:
-    loitering_state = merge_state.loitering_state
-    if loitering_state is None:
-        return 0, 0, 0
-
-    return (
-        len(loitering_state.pending_bucket_points),
-        len(loitering_state.active_pairs),
-        len(loitering_state.finished_events),
-    )
-
-
 def merge_ready_results(
     pending_results: dict[int, tuple[ChunkProcessingResult, float]],
     next_chunk_id_to_merge: int,
@@ -114,7 +126,18 @@ def merge_ready_results(
     verbose: bool = True,
 ) -> tuple[int, int, int, int]:
     """
-    Merge all consecutively available chunk results in strict chunk order.
+    Merge all consecutively available worker results in strict chunk order.
+
+    For each ready chunk, this function:
+    - removes it from the pending-result buffer;
+    - merges it into the global incremental state;
+    - records queue wait and merge timings;
+    - updates progress counters;
+    - appends one per-chunk profiling record.
+
+    Returns:
+        Updated next chunk ID to merge, processed valid-record count,
+        completed chunk count, and maximum pending-result buffer size seen.
     """
     while next_chunk_id_to_merge in pending_results:
         pending_count_before_merge = len(pending_results)
@@ -205,8 +228,24 @@ def run_detection_pipeline(
     detection_config: DetectionConfig = DEFAULT_DETECTION_CONFIG,
 ) -> DetectionPipelineResult:
     """
-    Run the full streaming + multiprocessing detection pipeline and return
-    structured results without exporting final anomaly CSV files.
+    Run the full streaming + multiprocessing AIS anomaly-detection pipeline.
+
+    The pipeline:
+    - streams raw AIS rows from one or more CSV files in fixed-size chunks;
+    - processes chunks in worker processes;
+    - buffers out-of-order worker outputs;
+    - merges chunk results in strict chunk order in the main process;
+    - finalizes anomaly B state after all chunks are merged;
+    - computes DFSI scores and profiling summaries;
+    - saves memory and pipeline profiling CSV files.
+
+    Returns:
+        Structured pipeline outputs, aggregated vessel summaries, DFSI
+        scores, anomaly B events, memory metrics, and profiling metadata.
+
+    Notes:
+        Final anomaly result CSV export is handled by the CLI layer rather
+        than by this function.
     """
     if run_config.chunk_size <= 0:
         raise ValueError("chunk_size must be greater than 0")

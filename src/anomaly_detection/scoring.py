@@ -6,7 +6,13 @@ from src.anomaly_detection import kilometers_to_nautical_miles
 
 
 def calculate_d1_episode_count(summary: VesselGlobalSummary) -> int:
-    """Aggregate D1 events into episodes using a 2-hour merge window."""
+    """
+    Aggregate D1 teleportation events into temporal episodes.
+
+    Consecutive D1 events are merged into the same episode when the next
+    event starts within 2 hours of the current episode end. The returned
+    count is used in DFSI instead of the raw D1 event count.
+    """
     events = summary.teleportation_d1_events
     if not events:
         return 0
@@ -37,12 +43,16 @@ def calculate_dfsi(summary: VesselGlobalSummary) -> float:
 
     The DFSI formula is defined as:
 
-        DFSI = (Max Gap in Hours / 2)
-             + (Total D2 Impossible Relocation Distance in Nautical Miles / 10)
-             + (C * 15)
+        DFSI = (Max Gap Hours / 2)
+             + (Draft Change Count * 15)
+             + (D1 Episode Count * 20)
+             + (Valid D2 Distance in Nautical Miles / 10)
 
-    D1 near-simultaneous cloning events are intentionally tracked separately
-    and do not contribute directly to DFSI.
+    Notes:
+        - D1 events are first aggregated into temporal episodes using
+          ``calculate_d1_episode_count``.
+        - Only D2 distance marked as valid for DFSI is accumulated into
+          ``summary.total_impossible_jump_km`` before scoring.
     """
     total_impossible_jump_nm = kilometers_to_nautical_miles(
         summary.total_impossible_jump_km,
@@ -61,7 +71,12 @@ def calculate_dfsi(summary: VesselGlobalSummary) -> float:
 def calculate_all_dfsi(
     vessel_summaries: dict[int, VesselGlobalSummary],
 ) -> dict[int, float]:
-    """Calculate DFSI scores for all vessels in the provided summaries."""
+    """
+    Calculate DFSI scores for all vessels in the provided global summaries.
+
+    Returns:
+        Mapping from MMSI to final DFSI score.
+    """
     return {
         mmsi: calculate_dfsi(summary)
         for mmsi, summary in vessel_summaries.items()
@@ -72,7 +87,16 @@ def rank_vessels_by_dfsi(
     vessel_summaries: dict[int, VesselGlobalSummary],
     descending: bool = True,
 ) -> list[tuple[int, float]]:
-    """Rank vessels by their DFSI scores."""
+    """
+    Rank vessels by DFSI score.
+
+    Args:
+        vessel_summaries: Global per-vessel summaries.
+        descending: If True, highest-risk vessels are returned first.
+
+    Returns:
+        List of ``(mmsi, dfsi_score)`` pairs sorted by score.
+    """
     scores = calculate_all_dfsi(vessel_summaries)
     return sorted(
         scores.items(),

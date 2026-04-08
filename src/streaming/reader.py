@@ -13,12 +13,12 @@ def stream_raw_rows(
     encoding: str = "utf-8",
 ) -> Generator[RawRow, None, None]:
     """
-    Stream compact raw AIS rows from a CSV file.
+    Stream compact raw AIS rows from one CSV file.
 
-    The main process performs only light work here:
+    The main process performs only lightweight work here:
     - sequential file I/O;
     - header parsing;
-    - extraction of required columns as raw strings.
+    - extraction of the project-required AIS columns as raw strings.
 
     All CPU-heavy parsing, validation, and ``AISRecord`` construction is
     intentionally deferred to worker processes.
@@ -28,7 +28,7 @@ def stream_raw_rows(
         encoding: File encoding used when opening the CSV file.
 
     Yields:
-        RawRow tuples containing only required AIS fields.
+        Compact ``RawRow`` tuples containing only the required AIS fields.
     """
     path = Path(file_path)
 
@@ -97,8 +97,9 @@ def stream_csv_files_in_chunks(
     """
     Stream compact raw AIS rows from multiple files in fixed-size chunks.
 
-    Files are processed sequentially, and chunk IDs continue across file
-    boundaries so the downstream pipeline can merge results in global order.
+    Files are read sequentially, and chunk IDs continue across file
+    boundaries so downstream processing can merge worker results in one
+    global input order.
 
     Args:
         file_paths: Iterable of AIS CSV file paths.
@@ -106,7 +107,7 @@ def stream_csv_files_in_chunks(
         encoding: File encoding used when opening each file.
 
     Yields:
-        Chunk tuples containing ``(chunk_id, raw_rows)``.
+        Chunk tuples of the form ``(chunk_id, raw_rows)``.
 
     Raises:
         ValueError: If ``chunk_size`` is less than or equal to zero.

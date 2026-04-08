@@ -27,6 +27,33 @@ Finally, each vessel is assigned a **DFSI (Dark Fleet Suspicion Index)** score.
 
 ---
 
+## Data Sources
+
+### AIS Data (Primary Dataset)
+
+This project is designed to process real-world AIS (Automatic Identification System) data.
+
+The data format and structure are based on datasets provided by:
+
+* http://aisdata.ais.dk/
+
+Due to the large size of the original datasets, raw AIS files are not included in this repository.
+Instead, small sample files are provided for testing and demonstration purposes.
+
+The pipeline is fully compatible with the original AIS data source.
+
+### Port Data (Auxiliary Dataset)
+
+Port location data is sourced from:
+
+* https://github.com/tayljordan/ports
+  Author: Jordan Taylor (GitHub: tayljordan)
+
+At the time of use, no explicit license was provided for this dataset.
+The data is used for research and educational purposes only.
+
+---
+
 ## Key design decisions
 
 - streaming processing instead of full dataset loading

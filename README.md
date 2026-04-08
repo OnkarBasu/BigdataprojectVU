@@ -6,7 +6,7 @@ Shadow Fleet Anomaly Detection on AIS Data
 
 ## Project task
 
-The goal of this project is to process large-scale AIS (Automatic Identification System) data and detect suspicious vessel behavior associated with the so-called *shadow fleet*.
+The goal of this project is to process large-scale AIS (Automatic Identification System) data and detect suspicious vessel behavior associated with the so-called *shadow fleet*. The system processes real-world AIS data (see Data Sources).
 
 The system identifies several types of anomalies:
 
@@ -14,7 +14,7 @@ The system identifies several types of anomalies:
   Long AIS gaps where the vessel likely continued moving.
 
 - **B — Loitering & Transfers**  
-  Two vessels staying within 500 meters of each other, with speed < 1 knot, for more than 2 hours at sea.
+  Two vessels repeatedly observed within 500 meters of each other, with speed < 1 knot, for more than 2 hours at sea.
 
 - **C — Draft Changes at Sea**  
   Significant draught changes during AIS blackout outside port areas.
@@ -40,7 +40,7 @@ The data format and structure are based on datasets provided by:
 Due to the large size of the original datasets, raw AIS files are not included in this repository.
 Instead, small sample files are provided for testing and demonstration purposes.
 
-The pipeline is fully compatible with the original AIS data source.
+The pipeline is designed for large AIS CSV datasets and processes them in a streaming, chunked manner.
 
 ### Port Data (Auxiliary Dataset)
 
@@ -51,6 +51,13 @@ Port location data is sourced from:
 
 At the time of use, no explicit license was provided for this dataset.
 The data is used for research and educational purposes only.
+
+---
+
+### Data Assumptions
+
+- Only AIS messages of type **Class A** are processed.
+- Input CSV files must contain required AIS columns (timestamp, MMSI, coordinates, SOG, draught).
 
 ---
 
@@ -291,7 +298,9 @@ S(n) = 1 / ((1 - P) + P / n)
 |   ├── run_plots.py       # visualization entrypoint
 │   └── output/
 ├── analysis/
-|   └── performance_benchmarking.ipynb
+|   └── performance_benchmarking.ipynb  # performance analysis
+├── presentation/
+|   └── index.html         # interactive presentation
 ├── README.md              # You are here :)
 ├── CONTRIBUTING.md
 ├── LICENSE
@@ -322,6 +331,9 @@ The detection pipeline exports:
 
 - `memory_summary.csv`  
   Final memory summary (peak and final RSS metrics).
+
+- `pipeline_profile.csv`  
+  Per-chunk pipeline profiling data.
 
 - Visualization CSV files:
   - `top_going_dark_vessel_map.csv`
